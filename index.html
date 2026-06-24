@@ -1,0 +1,1377 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BrandHub — Satu & TTBC</title>
+<style>
+  :root {
+    --brand-satu: #6B3FA0;
+    --brand-satu-light: #8B5CC8;
+    --brand-satu-bg: #F3EFFE;
+    --brand-ttbc: #2D6A4F;
+    --brand-ttbc-light: #40916C;
+    --brand-ttbc-bg: #EAF4EF;
+    --sidebar-bg: #1A1225;
+    --sidebar-text: #C4B8D8;
+    --sidebar-active: #6B3FA0;
+    --text-primary: #1A1225;
+    --text-secondary: #6B7280;
+    --border: #E5E7EB;
+    --bg-page: #F8F7FB;
+    --bg-card: #FFFFFF;
+    --status-pending: #F59E0B;
+    --status-approved: #10B981;
+    --status-arrived: #6B3FA0;
+    --status-cancelled: #EF4444;
+    --status-ordered: #3B82F6;
+    --font-main: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font-main); background: var(--bg-page); color: var(--text-primary); display: flex; height: 100vh; overflow: hidden; }
+
+  /* SIDEBAR */
+  .sidebar {
+    width: 220px; min-width: 220px; background: var(--sidebar-bg);
+    display: flex; flex-direction: column; padding: 0;
+    box-shadow: 2px 0 12px rgba(0,0,0,0.15);
+    z-index: 10;
+  }
+  .sidebar-brand {
+    padding: 20px 18px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .brand-label { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; color: rgba(255,255,255,0.35); text-transform: uppercase; margin-bottom: 10px; }
+  .brand-switch { display: flex; gap: 6px; }
+  .brand-btn {
+    flex: 1; padding: 7px 0; border-radius: 6px; border: 1.5px solid transparent;
+    font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s; letter-spacing: 0.03em;
+  }
+  .brand-btn.satu { background: var(--brand-satu); color: white; }
+  .brand-btn.satu.inactive { background: transparent; color: rgba(255,255,255,0.35); border-color: rgba(255,255,255,0.1); }
+  .brand-btn.ttbc { background: var(--brand-ttbc); color: white; }
+  .brand-btn.ttbc.inactive { background: transparent; color: rgba(255,255,255,0.35); border-color: rgba(255,255,255,0.1); }
+  .sidebar-logo { padding: 16px 18px 4px; }
+  .sidebar-logo span { font-size: 18px; font-weight: 800; color: white; letter-spacing: -0.02em; }
+  .sidebar-logo .dot { color: var(--brand-satu-light); }
+
+  .sidebar-nav { padding: 8px 10px; flex: 1; overflow-y: auto; }
+  .nav-section-label { font-size: 9px; font-weight: 700; letter-spacing: 0.12em; color: rgba(255,255,255,0.25); text-transform: uppercase; padding: 12px 8px 6px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; padding: 9px 10px;
+    border-radius: 7px; cursor: pointer; color: var(--sidebar-text);
+    font-size: 13px; font-weight: 500; transition: all 0.15s; margin-bottom: 2px;
+  }
+  .nav-item:hover { background: rgba(255,255,255,0.07); color: white; }
+  .nav-item.active { background: var(--brand-satu); color: white; }
+  .nav-item .icon { font-size: 15px; width: 20px; text-align: center; }
+  .nav-badge { margin-left: auto; background: var(--status-pending); color: white; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 10px; }
+
+  .sidebar-footer { padding: 12px 18px; border-top: 1px solid rgba(255,255,255,0.08); }
+  .sync-btn {
+    width: 100%; padding: 8px; background: rgba(107,63,160,0.3); border: 1px solid rgba(107,63,160,0.5);
+    color: #C4B8D8; border-radius: 7px; cursor: pointer; font-size: 12px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;
+  }
+  .sync-btn:hover { background: rgba(107,63,160,0.5); color: white; }
+  .sync-btn.syncing { opacity: 0.7; cursor: not-allowed; }
+  .last-sync { font-size: 10px; color: rgba(255,255,255,0.25); text-align: center; margin-top: 6px; }
+
+  /* MAIN */
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .topbar {
+    background: white; padding: 0 28px; height: 58px; display: flex; align-items: center;
+    justify-content: space-between; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .page-title { font-size: 17px; font-weight: 700; color: var(--text-primary); }
+  .page-sub { font-size: 12px; color: var(--text-secondary); margin-top: 1px; }
+  .topbar-actions { display: flex; align-items: center; gap: 10px; }
+  .btn {
+    padding: 7px 14px; border-radius: 7px; font-size: 13px; font-weight: 600;
+    cursor: pointer; border: none; transition: all 0.15s;
+  }
+  .btn-primary { background: var(--brand-satu); color: white; }
+  .btn-primary:hover { background: var(--brand-satu-light); }
+  .btn-outline { background: white; color: var(--text-primary); border: 1.5px solid var(--border); }
+  .btn-outline:hover { border-color: var(--brand-satu); color: var(--brand-satu); }
+
+  .content { flex: 1; overflow-y: auto; padding: 24px 28px; }
+  .content.no-pad { padding: 0; overflow: hidden; }
+
+  /* TABS */
+  .view-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 20px; }
+  .view-tab {
+    padding: 8px 18px; font-size: 13px; font-weight: 600; cursor: pointer;
+    color: var(--text-secondary); border-bottom: 2px solid transparent; margin-bottom: -2px;
+    transition: all 0.15s;
+  }
+  .view-tab.active { color: var(--brand-satu); border-bottom-color: var(--brand-satu); }
+  .view-tab:hover { color: var(--brand-satu); }
+
+  /* FILTERS */
+  .filters { display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; align-items: center; }
+  .filter-select {
+    padding: 7px 10px; border: 1.5px solid var(--border); border-radius: 7px;
+    font-size: 12px; color: var(--text-primary); background: white; cursor: pointer;
+  }
+  .search-input {
+    padding: 7px 12px; border: 1.5px solid var(--border); border-radius: 7px;
+    font-size: 12px; min-width: 200px; outline: none; transition: border 0.15s;
+  }
+  .search-input:focus { border-color: var(--brand-satu); }
+  .filter-count { font-size: 12px; color: var(--text-secondary); margin-left: auto; }
+
+  /* STATS ROW */
+  .stats-row { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+  .stat-card {
+    background: white; border-radius: 10px; padding: 14px 18px; flex: 1; min-width: 120px;
+    border: 1px solid var(--border); position: relative; overflow: hidden;
+  }
+  .stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+  .stat-card.pending::before { background: var(--status-pending); }
+  .stat-card.ordered::before { background: var(--status-ordered); }
+  .stat-card.arrived::before { background: var(--status-arrived); }
+  .stat-card.total::before { background: var(--border); }
+  .stat-num { font-size: 24px; font-weight: 800; color: var(--text-primary); }
+  .stat-label { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+
+  /* TABLE */
+  .td-brand { font-weight: 700; font-size: 11px; padding: 3px 7px; border-radius: 4px; display: inline-block; }
+  .td-brand.satu { background: var(--brand-satu-bg); color: var(--brand-satu); }
+  .td-brand.ttbc { background: var(--brand-ttbc-bg); color: var(--brand-ttbc); }
+
+  /* STATUS BADGE */
+  .status-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; white-space: nowrap;
+  }
+  .status-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; }
+  .status-badge.pending { background: #FEF3C7; color: #92400E; }
+  .status-badge.pending::before { background: var(--status-pending); }
+  .status-badge.approved { background: #D1FAE5; color: #065F46; }
+  .status-badge.approved::before { background: var(--status-approved); }
+  .status-badge.ordered { background: #DBEAFE; color: #1E40AF; }
+  .status-badge.ordered::before { background: var(--status-ordered); }
+  .status-badge.arrived { background: var(--brand-satu-bg); color: var(--brand-satu); }
+  .status-badge.arrived::before { background: var(--brand-satu); }
+  .status-badge.cancelled { background: #FEE2E2; color: #991B1B; }
+  .status-badge.cancelled::before { background: var(--status-cancelled); }
+
+  /* STATUS SELECT */
+  .status-select {
+    padding: 4px 8px; border-radius: 6px; border: 1.5px solid var(--border);
+    font-size: 12px; cursor: pointer; background: white; outline: none;
+  }
+
+  /* DATE INPUT */
+  .date-input {
+    padding: 4px 8px; border: 1.5px solid var(--border); border-radius: 6px;
+    font-size: 12px; cursor: pointer; color: var(--text-primary); outline: none;
+    transition: border 0.15s;
+  }
+  .date-input:focus { border-color: var(--brand-satu); }
+  .date-input.has-date { border-color: var(--brand-satu); background: var(--brand-satu-bg); color: var(--brand-satu); }
+  .cost-input {
+    width: 84px; padding: 4px 6px; border: 1.5px solid var(--border); border-radius: 6px;
+    font-size: 12px; color: var(--text-primary); outline: none; transition: border 0.15s;
+  }
+  .cost-input:focus { border-color: var(--brand-satu); }
+  .cost-input.has-value { border-color: var(--brand-satu); background: var(--brand-satu-bg); color: var(--brand-satu); }
+  .design-badge { font-size: 10px; padding: 3px 7px; }
+
+  /* PROCUREMENT CARD GRID */
+  .proc-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+  }
+  .proc-card {
+    background: white; border-radius: 14px; border: 1px solid var(--border);
+    padding: 18px 20px; display: flex; flex-direction: column; gap: 12px;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .proc-card:hover { border-color: var(--brand-satu); box-shadow: 0 2px 14px rgba(107,63,160,0.08); }
+  .proc-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .proc-card-applicant { font-size: 15px; font-weight: 700; }
+  .proc-card-time { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+  .proc-card-badges { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .proc-card-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); margin-bottom: 4px; }
+  .proc-card-product {
+    font-size: 12.5px; color: var(--text-primary); background: #FAFAFA; border-radius: 8px;
+    padding: 10px 12px; white-space: pre-wrap; max-height: 130px; overflow-y: auto; line-height: 1.55;
+  }
+  .proc-card-progress { margin: 2px 0; }
+  .h-progress { display: flex; align-items: center; margin: 14px 0 4px; }
+  .h-step-item { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .h-step-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--color-border-secondary); background: var(--color-background-primary); flex-shrink: 0; }
+  .h-step-dot.done { background: #6B3FA0; border-color: #6B3FA0; }
+  .h-step-dot.current { background: #F59E0B; border-color: #F59E0B; }
+  .h-step-label { font-size: 11px; color: var(--color-text-secondary); white-space: nowrap; }
+  .h-step-label.done { color: #6B3FA0; }
+  .h-step-label.current { color: #F59E0B; font-weight: 600; }
+  .h-step-line { flex: 1; height: 2px; background: var(--color-border-tertiary); margin-bottom: 18px; }
+  .h-step-line.done { background: #6B3FA0; }
+  .pay-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; background: var(--color-background-secondary); border-radius: var(--border-radius-md); margin: 12px 0; }
+  .pay-info { flex: 1; }
+  .pay-btn { font-size: 12px; font-weight: 500; padding: 8px 16px; border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-secondary); background: var(--color-background-primary); color: var(--color-text-primary); cursor: pointer; white-space: nowrap; }
+  .pay-btn:hover { background: var(--color-background-tertiary); }
+  .pay-btn.paid { background: var(--color-background-success); border-color: var(--color-border-success); color: var(--color-text-success); }
+  .proc-card-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .proc-card-fields input { width: 100%; box-sizing: border-box; }
+  .proc-card-footer { display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid var(--border); margin-top: 2px; }
+  .pay-input {
+    padding: 4px 8px; border: 1.5px solid var(--border); border-radius: 6px; font-size: 12px;
+    color: var(--text-primary); outline: none; transition: border 0.15s;
+  }
+  .pay-input:focus { border-color: var(--brand-satu); }
+  .pay-input.has-value { border-color: var(--brand-satu); background: var(--brand-satu-bg); color: var(--brand-satu); }
+
+  /* PROGRESS BAR (signature element) */
+  .progress-track { display: flex; height: 4px; border-radius: 2px; overflow: hidden; gap: 2px; width: 100px; }
+  .progress-step { flex: 1; background: var(--border); border-radius: 2px; }
+  .progress-step.done { background: var(--brand-satu); }
+  .progress-step.current { background: var(--status-pending); }
+
+  /* DETAIL PANEL */
+  .detail-btn { color: var(--brand-satu); cursor: pointer; font-size: 12px; font-weight: 600; background: none; border: none; }
+  .detail-btn:hover { text-decoration: underline; }
+
+  /* EMPTY STATE */
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--text-secondary); }
+  .empty-state .icon { font-size: 40px; margin-bottom: 12px; }
+  .empty-state h3 { font-size: 16px; font-weight: 700; color: var(--text-primary); margin-bottom: 6px; }
+  .empty-state p { font-size: 13px; }
+
+  /* TOAST */
+  .toast {
+    position: fixed; bottom: 24px; right: 24px; background: var(--text-primary); color: white;
+    padding: 12px 18px; border-radius: 9px; font-size: 13px; font-weight: 600;
+    display: flex; align-items: center; gap: 8px; z-index: 1000;
+    transform: translateY(80px); opacity: 0; transition: all 0.3s; pointer-events: none;
+  }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.success { background: #065F46; }
+  .toast.error { background: #991B1B; }
+
+  /* MODAL */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s;
+  }
+  .modal-overlay.show { opacity: 1; pointer-events: all; }
+  .modal {
+    background: white; border-radius: 14px; width: 100%; max-width: 600px;
+    max-height: 85vh; overflow-y: auto; padding: 28px;
+    transform: scale(0.95); transition: transform 0.2s;
+  }
+  .modal-overlay.show .modal { transform: scale(1); }
+  .modal-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 22px; }
+  .modal-title { font-size: 17px; font-weight: 800; }
+  .modal-close { background: none; border: none; font-size: 22px; cursor: pointer; color: var(--text-secondary); line-height: 1; padding: 0; }
+  .modal-section { margin-bottom: 20px; }
+  .modal-section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); margin-bottom: 10px; }
+  .modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .modal-field { }
+  .modal-field label { font-size: 11px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px; }
+  .modal-field .value { font-size: 13px; color: var(--text-primary); font-weight: 500; }
+  .modal-field .value.empty { color: var(--text-secondary); font-style: italic; }
+  .modal-field select, .modal-field input {
+    width: 100%; padding: 8px 10px; border: 1.5px solid var(--border); border-radius: 7px;
+    font-size: 13px; outline: none; transition: border 0.15s;
+  }
+  .modal-field select:focus, .modal-field input:focus { border-color: var(--brand-satu); }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border); }
+  .script-textarea {
+    width: 100%; height: 360px; font-family: 'SFMono-Regular', Consolas, monospace; font-size: 12px;
+    line-height: 1.6; padding: 14px; border: 1.5px solid var(--border); border-radius: 8px;
+    resize: vertical; background: #FAFAFA; color: var(--text-primary);
+  }
+
+  /* GROUPBUY SECTION */
+  .gb-card {
+    background: white; border-radius: 12px; border: 1px solid var(--border);
+    padding: 18px 20px; margin-bottom: 12px; display: flex; gap: 16px; align-items: flex-start;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .gb-card:hover { border-color: var(--brand-satu); box-shadow: 0 2px 12px rgba(107,63,160,0.08); }
+  .gb-status-bar { width: 4px; border-radius: 2px; align-self: stretch; min-height: 60px; flex-shrink: 0; }
+  .gb-content { flex: 1; }
+  .gb-title { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .gb-meta { font-size: 12px; color: var(--text-secondary); display: flex; gap: 14px; flex-wrap: wrap; }
+  .gb-meta span::before { content: ''; }
+  .gb-stats { display: flex; gap: 16px; margin-top: 10px; }
+  .gb-stat { text-align: center; }
+  .gb-stat-num { font-size: 18px; font-weight: 800; color: var(--brand-satu); }
+  .gb-stat-label { font-size: 10px; color: var(--text-secondary); }
+
+  /* ADD FORM */
+  .add-form { background: white; border-radius: 12px; border: 2px dashed var(--border); padding: 24px; margin-bottom: 20px; display: none; }
+  .add-form.show { display: block; }
+  .form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+  .form-field label { font-size: 11px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px; }
+  .form-field input, .form-field select, .form-field textarea {
+    width: 100%; padding: 8px 10px; border: 1.5px solid var(--border); border-radius: 7px;
+    font-size: 13px; outline: none; transition: border 0.15s; resize: vertical;
+  }
+  .form-field input:focus, .form-field select:focus, .form-field textarea:focus { border-color: var(--brand-satu); }
+
+  /* CONFIG SECTION */
+  .config-card { background: white; border-radius: 12px; border: 1px solid var(--border); padding: 22px; margin-bottom: 16px; }
+  .config-card h3 { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+  .config-card p { font-size: 13px; color: var(--text-secondary); margin-bottom: 14px; }
+  .config-input-wrap { display: flex; gap: 10px; }
+  .config-input {
+    flex: 1; padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 7px;
+    font-size: 13px; outline: none; font-family: monospace; transition: border 0.15s;
+  }
+  .config-input:focus { border-color: var(--brand-satu); }
+  .config-status { display: flex; align-items: center; gap: 6px; font-size: 12px; margin-top: 8px; }
+  .config-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
+  .config-dot.ok { background: var(--status-approved); }
+  .config-dot.err { background: var(--status-cancelled); }
+
+  .page { display: none; }
+  .page.active { display: block; }
+  #page-groupbuy.active { display: flex; flex-direction: column; height: calc(100vh - 0px); padding: 0; }
+  .content.no-pad { padding: 0; overflow: hidden; height: 100%; display: flex; flex-direction: column; }
+  .content.no-pad #page-groupbuy.active { flex: 1; height: 100%; }
+  .content.no-pad #page-groupbuy.active iframe { flex: 1; height: 100%; }
+
+  .ttbc-theme .nav-item.active { background: var(--brand-ttbc); }
+  .ttbc-theme .brand-btn.satu { background: transparent; color: rgba(255,255,255,0.35); border-color: rgba(255,255,255,0.1); }
+  .ttbc-theme .brand-btn.ttbc { background: var(--brand-ttbc); color: white; }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo"><span>Brand<span class="dot">Hub</span></span></div>
+  <div class="sidebar-brand">
+    <div class="brand-label">切換品牌</div>
+    <div class="brand-switch">
+      <button class="brand-btn satu" onclick="switchBrand('satu')">Satu</button>
+      <button class="brand-btn ttbc inactive" onclick="switchBrand('ttbc')">TTBC</button>
+    </div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-section-label">主要功能</div>
+    <div class="nav-item active" onclick="showPage('procurement')" id="nav-procurement">
+      <span class="icon">📦</span> 採購管理
+      <span class="nav-badge" id="pending-badge">0</span>
+    </div>
+    <div class="nav-item" onclick="showPage('groupbuy')" id="nav-groupbuy">
+      <span class="icon">🛍️</span> 團購資料
+    </div>
+    <div class="nav-section-label">即將推出</div>
+    <div class="nav-item" style="opacity:0.4;cursor:not-allowed">
+      <span class="icon">💰</span> 利潤表
+    </div>
+    <div class="nav-item" style="opacity:0.4;cursor:not-allowed">
+      <span class="icon">🌟</span> KOL Seeding
+    </div>
+    <div class="nav-item" style="opacity:0.4;cursor:not-allowed">
+      <span class="icon">📊</span> 庫存管理
+    </div>
+    <div class="nav-section-label">設定</div>
+    <div class="nav-item" onclick="showPage('config')" id="nav-config">
+      <span class="icon">⚙️</span> 連接設定
+    </div>
+  </nav>
+  <div class="sidebar-footer">
+    <button class="sync-btn" id="sync-btn" onclick="syncData()">
+      <span id="sync-icon">🔄</span> 同步資料
+    </button>
+    <div class="last-sync" id="last-sync">尚未同步</div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<main class="main">
+  <div class="topbar">
+    <div>
+      <div class="page-title" id="page-title">採購管理</div>
+      <div class="page-sub" id="page-sub">從 Google 表單自動同步的採購申請</div>
+    </div>
+    <div class="topbar-actions" id="topbar-actions">
+      <button class="btn btn-outline" onclick="exportData()">⬇ 匯出</button>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- PROCUREMENT PAGE -->
+    <div class="page active" id="page-procurement">
+      <div class="stats-row" id="stats-row">
+        <div class="stat-card total"><div class="stat-num" id="stat-total">0</div><div class="stat-label">全部申請</div></div>
+        <div class="stat-card pending"><div class="stat-num" id="stat-pending">0</div><div class="stat-label">待處理</div></div>
+        <div class="stat-card ordered"><div class="stat-num" id="stat-ordered">0</div><div class="stat-label">已下單</div></div>
+        <div class="stat-card arrived"><div class="stat-num" id="stat-arrived">0</div><div class="stat-label">已到貨</div></div>
+      </div>
+
+      <div class="view-tabs">
+        <div class="view-tab active" onclick="setTab('all', this)">全部</div>
+        <div class="view-tab" onclick="setTab('pending', this)">待處理</div>
+        <div class="view-tab" onclick="setTab('approved', this)">已審批</div>
+        <div class="view-tab" onclick="setTab('ordered', this)">已下單</div>
+        <div class="view-tab" onclick="setTab('arrived', this)">已到貨</div>
+      </div>
+
+      <div class="filters">
+        <input class="search-input" type="text" placeholder="搜尋申請人、項目…" id="search-input" oninput="filterTable()">
+        <select class="filter-select" id="brand-filter" onchange="filterTable()">
+          <option value="all">全部品牌</option>
+          <option value="Satu">Satu</option>
+          <option value="TTBC">TTBC</option>
+        </select>
+        <select class="filter-select" id="type-filter" onchange="filterTable()">
+          <option value="all">樣品 + 大貨</option>
+          <option value="sample">樣品</option>
+          <option value="bulk">大貨</option>
+        </select>
+        <div class="filter-count" id="filter-count">— 筆</div>
+      </div>
+
+      <div class="proc-grid" id="procurement-grid"></div>
+      <div class="empty-state" id="empty-procurement" style="display:none">
+        <div class="icon">📭</div>
+        <h3>沒有採購申請</h3>
+        <p>請先在「連接設定」填入 Google Sheets API 網址，然後點擊同步。</p>
+      </div>
+    </div>
+
+    <!-- GROUPBUY PAGE -->
+    <div class="page" id="page-groupbuy" style="height:100%;display:none">
+      <iframe
+        src="https://satubuygroup.vercel.app/"
+        style="width:100%;height:100%;border:none;display:block;"
+        allow="clipboard-read; clipboard-write"
+        id="groupbuy-iframe"
+      ></iframe>
+    </div>
+
+    <!-- CONFIG PAGE -->
+    <div class="page" id="page-config">
+      <div class="config-card">
+        <h3>📋 連接你的採購 Apps Script</h3>
+        <p>把下方第二步驟拿到的 <code style="background:#F3EFFE;padding:2px 6px;border-radius:4px;font-family:monospace">WEBAPP_URL</code> 貼入下方，網站就能讀取所有採購申請，且完全不影響你原有的 Email 通知流程。</p>
+        <div style="background:#FEF3C7;border-left:3px solid #F59E0B;padding:10px 14px;border-radius:6px;font-size:13px;margin-bottom:14px">
+          💡 你的 WEBAPP_URL 在 Apps Script 的 CONFIG 裡，格式為<br>
+          <code style="font-size:12px">https://script.google.com/macros/s/…/exec</code>
+        </div>
+        <div class="config-input-wrap">
+          <input class="config-input" type="text" id="sheets-url" placeholder="https://script.google.com/macros/s/…/exec" oninput="saveConfig()">
+          <button class="btn btn-primary" onclick="testConnection()">測試連線</button>
+        </div>
+        <div class="config-status">
+          <div class="config-dot" id="sheets-dot"></div>
+          <span id="sheets-status">未設定</span>
+        </div>
+      </div>
+
+      <div class="config-card">
+        <h3>🆕 建立一個全新、獨立的讀取用 Apps Script</h3>
+        <p>這個全新的 Apps Script 跟你原本處理 Email 審批流程的腳本完全分開、互不影響，它唯一的功能就是讀取 Google Sheet 資料給這個網站用。</p>
+        <div style="background:#FEF3C7;border-left:3px solid #F59E0B;padding:10px 14px;border-radius:6px;font-size:13px;margin-bottom:14px">
+          <strong>步驟：</strong><br>
+          1. 打開 <a href="https://script.google.com" target="_blank" rel="noopener">script.google.com</a>，點「新增專案」<br>
+          2. 打開你原本連接表單的那份 Google Sheet，從網址列複製 Sheet ID（<code style="font-family:monospace">/d/</code> 和 <code style="font-family:monospace">/edit</code> 之間那一串）<br>
+          3. 點下方「複製參考程式碼」，貼到新專案裡，把 <code style="font-family:monospace">SHEET_ID</code> 換成剛複製的那串<br>
+          4. 點 <strong>部署 → 新增部署</strong>，類型選「網頁應用程式」，執行身分 = <strong>我</strong>，存取權限 = <strong>所有人</strong><br>
+          5. 部署後會拿到一個新的 <code style="font-family:monospace">.../exec</code> 網址，貼到下方欄位
+          <div style="margin-top:10px"><button class="btn btn-outline" onclick="copyScript()">📋 複製參考程式碼</button></div>
+        </div>
+        <div style="background:#D1FAE5;border-left:3px solid #10B981;padding:10px 14px;border-radius:6px;font-size:13px;margin-bottom:14px">
+          ✅ 完全是另一個專案，不會動到你原本 Email 審批流程的任何程式碼<br>
+          ✅ 網站只「讀取」資料，不會修改任何 Sheets 內容<br>
+          ✅ 到貨日期、狀態備註儲存在瀏覽器本地，不影響 Sheets
+        </div>
+        <p style="font-size:13px;color:var(--text-secondary)">如果測試連線顯示「連線逾時」，最快的排查方式是直接把新網址（含 <code style="font-family:monospace">?action=getRequests</code>）貼到瀏覽器網址列開啟——能看到 JSON 資料表示腳本本身沒問題；看到錯誤訊息，通常是 <code style="font-family:monospace">SHEET_ID</code> 貼錯或還沒授權存取該表單。</p>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<!-- DETAIL MODAL -->
+<div class="modal-overlay" id="detail-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="modal-project-name">—</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:3px" id="modal-timestamp">—</div>
+      </div>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">📦 基本資訊</div>
+      <div class="modal-grid">
+        <div class="modal-field"><label>申請人</label><div class="value" id="md-applicant">—</div></div>
+        <div class="modal-field"><label>品牌</label><div class="value" id="md-brand">—</div></div>
+        <div class="modal-field"><label>Email</label><div class="value" id="md-email">—</div></div>
+        <div class="modal-field"><label>申請項目</label><div class="value" id="md-item">—</div></div>
+      </div>
+    </div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">🧪 樣品資訊</div>
+      <div class="modal-grid">
+        <div class="modal-field"><label>樣品採購項目</label><div class="value" id="md-sample-item">—</div></div>
+        <div class="modal-field"><label>樣品數量</label><div class="value" id="md-sample-qty">—</div></div>
+        <div class="modal-field"><label>寄送地點</label><div class="value" id="md-sample-addr">—</div></div>
+        <div class="modal-field"><label>目標單價</label><div class="value" id="md-sample-price">—</div></div>
+        <div class="modal-field"><label>希望取得日期</label><div class="value" id="md-sample-date">—</div></div>
+        <div class="modal-field"><label>確認給Nicole</label><div class="value" id="md-nicole">—</div></div>
+      </div>
+    </div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">🏭 大貨資訊</div>
+      <div class="modal-grid">
+        <div class="modal-field" style="grid-column:1/-1"><label>採購項目 & 規格</label><div class="value" id="md-bulk-item">—</div></div>
+        <div class="modal-field"><label>大貨數量</label><div class="value" id="md-bulk-qty">—</div></div>
+        <div class="modal-field"><label>大貨成本（原始填寫）</label><div class="value" id="md-bulk-cost">—</div></div>
+        <div class="modal-field"><label>包裝方式</label><div class="value" id="md-packing">—</div></div>
+        <div class="modal-field"><label>希望入庫日</label><div class="value" id="md-bulk-date">—</div></div>
+      </div>
+    </div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">🎨 設計需求</div>
+      <div class="modal-grid">
+        <div class="modal-field"><label>是否需要設計師出稿</label><div class="value" id="md-design-needed">—</div></div>
+        <div class="modal-field"><label>希望提供設計稿時間</label><div class="value" id="md-design-deadline">—</div></div>
+        <div class="modal-field" style="grid-column:1/-1"><label>設計需求說明</label><div class="value" id="md-design-notes">—</div></div>
+      </div>
+    </div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">⚙️ 更新狀態</div>
+      <div class="modal-grid">
+        <div class="modal-field">
+          <label>目前狀態</label>
+          <select id="md-status-select">
+            <option value="pending">待處理</option>
+            <option value="approved">已審批</option>
+            <option value="ordered">已下單</option>
+            <option value="arrived">已到貨</option>
+            <option value="cancelled">已取消</option>
+          </select>
+        </div>
+        <div class="modal-field">
+          <label>預計到貨日期</label>
+          <input type="date" id="md-arrival-date">
+        </div>
+        <div class="modal-field">
+          <label>單個成本</label>
+          <input type="text" id="md-unit-cost" placeholder="例：18.12">
+        </div>
+        <div class="modal-field">
+          <label>總成本</label>
+          <input type="text" id="md-total-cost" placeholder="例：20448">
+        </div>
+        <div class="modal-field" style="grid-column:1/-1">
+          <label>老闆需要付的金額</label>
+          <input type="text" id="md-owner-pay" placeholder="請填寫金額，自己決定要不要寫幣別">
+        </div>
+        <div class="modal-field">
+          <label>預計出貨日期</label>
+          <input type="date" id="md-ship-date">
+        </div>
+        <div class="modal-field">
+          <label>預計入庫日期</label>
+          <input type="date" id="md-warehouse-date">
+        </div>
+        <div class="modal-field" style="grid-column:1/-1">
+          <label>備註 / 供應商資訊</label>
+          <input type="text" id="md-notes" placeholder="輸入備註…">
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">關閉</button>
+      <button class="btn btn-primary" onclick="saveModalChanges()">儲存變更</button>
+    </div>
+  </div>
+</div>
+
+<!-- SCRIPT MODAL -->
+<div class="modal-overlay" id="script-modal">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-header">
+      <div class="modal-title">📋 參考程式碼</div>
+      <button class="modal-close" onclick="closeScriptModal()">×</button>
+    </div>
+    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px" id="script-modal-hint">內容已自動選取，按 <strong>Ctrl+C</strong>（Mac 用 <strong>⌘+C</strong>）複製，再貼到你的 Apps Script 編輯器裡。</p>
+    <textarea id="script-textarea" readonly class="script-textarea" onclick="this.select()"></textarea>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ===================== STATE =====================
+let state = {
+  brand: 'satu',
+  page: 'procurement',
+  tab: 'all',
+  procurements: [],
+  groupbuys: [],
+  overrides: {}, // local status/date overrides keyed by row index
+  config: { sheetsUrl: '' },
+};
+
+// ===================== APPS SCRIPT CODE =====================
+// 這是一個全新、獨立的 Apps Script 專案要用的「完整」程式碼，
+// 跟你原本處理 Email 審批流程的腳本完全分開、互不影響。
+// 把下面的 SHEET_ID 換成你那份 Google Sheet 的 ID
+// （網址 https://docs.google.com/spreadsheets/d/「這一段」/edit）。
+const APPS_SCRIPT = `var SHEET_ID = '貼上你的 Google Sheet ID';
+
+function doGet(e) {
+  var result;
+  try {
+    if (e.parameter.action === 'getRequests') {
+      var ss = SpreadsheetApp.openById(SHEET_ID);
+      var sheet = ss.getSheetByName("表單回覆 1") || ss.getSheetByName("Form Responses 1") || ss.getSheets()[0];
+      var data = sheet.getDataRange().getValues();
+      var headers = data[0];
+      var rows = [];
+      for (var i = 1; i < data.length; i++) {
+        var row = {};
+        for (var j = 0; j < headers.length; j++) {
+          row[headers[j]] = data[i][j];
+        }
+        rows.push(row);
+      }
+      result = { success: true, data: rows };
+    } else {
+      result = { success: false, error: '未知的 action：' + e.parameter.action };
+    }
+  } catch (err) {
+    result = { success: false, error: err.message };
+  }
+  return buildOutput(e, result);
+}
+
+// 共用的輸出函式：有帶 callback 參數就回 JSONP，沒帶就回一般 JSON
+function buildOutput(e, result) {
+  var callback = e.parameter.callback;
+  if (callback) {
+    return ContentService
+      .createTextOutput(callback + '(' + JSON.stringify(result) + ')')
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return ContentService
+    .createTextOutput(JSON.stringify(result))
+    .setMimeType(ContentService.MimeType.JSON);
+}`;
+
+// ===================== JSONP（繞過 CORS）=====================
+// Google Apps Script 的 /exec 網址在某些情況下（程式碼出錯、部署設定、
+// 重新導向到登入頁等）瀏覽器會把它擋成 CORS 錯誤。JSONP 用 <script> 標籤
+// 載入資料，不受 CORS 限制，是最穩定的繞過方式。
+// 前提：Apps Script 那端的 doGet 要支援 callback 參數，見上面 APPS_SCRIPT 範例。
+function jsonpRequest(url, timeoutMs = 12000) {
+  return new Promise((resolve, reject) => {
+    const cbName = 'bh_cb_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
+    const script = document.createElement('script');
+    let done = false;
+
+    const cleanup = () => {
+      done = true;
+      delete window[cbName];
+      script.remove();
+      window.removeEventListener('error', onWinError);
+      clearTimeout(timer);
+    };
+
+    // 如果 Apps Script 回傳的不是合法 JS（例如程式碼出錯時 Google 回的錯誤頁面），
+    // <script> 標籤會載入成功但執行會出錯，這裡用全域 error 事件接住這種情況。
+    const onWinError = () => {
+      if (done) return;
+      cleanup();
+      reject(new Error('Apps Script 回應內容不是預期格式，請直接用瀏覽器開啟該網址確認是否有錯誤訊息'));
+    };
+    window.addEventListener('error', onWinError);
+
+    window[cbName] = (data) => {
+      if (done) return;
+      cleanup();
+      resolve(data);
+    };
+
+    script.onerror = () => {
+      if (done) return;
+      cleanup();
+      reject(new Error('無法載入，請確認網址正確，且部署設定為「執行身分：我」「存取權限：所有人」'));
+    };
+
+    const timer = setTimeout(() => {
+      if (done) return;
+      cleanup();
+      reject(new Error('連線逾時，請確認 Apps Script 是否正常執行（可直接開網址測試）'));
+    }, timeoutMs);
+
+    script.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + cbName;
+    document.body.appendChild(script);
+  });
+}
+
+// ===================== INIT =====================
+document.addEventListener('DOMContentLoaded', () => {
+  loadConfig();
+  loadLocal();
+  renderPage();
+  updateBadge();
+});
+
+function loadConfig() {
+  const saved = localStorage.getItem('bh_config');
+  if (saved) state.config = JSON.parse(saved);
+  const el = document.getElementById('sheets-url');
+  if (el) el.value = state.config.sheetsUrl || '';
+}
+
+function saveConfig() {
+  state.config.sheetsUrl = document.getElementById('sheets-url').value.trim();
+  localStorage.setItem('bh_config', JSON.stringify(state.config));
+}
+
+function loadLocal() {
+  const p = localStorage.getItem('bh_procurements');
+  const g = localStorage.getItem('bh_groupbuys');
+  const o = localStorage.getItem('bh_overrides');
+  if (p) state.procurements = JSON.parse(p);
+  if (g) state.groupbuys = JSON.parse(g);
+  if (o) state.overrides = JSON.parse(o);
+}
+
+function saveLocal() {
+  localStorage.setItem('bh_procurements', JSON.stringify(state.procurements));
+  localStorage.setItem('bh_groupbuys', JSON.stringify(state.groupbuys));
+  localStorage.setItem('bh_overrides', JSON.stringify(state.overrides));
+}
+
+// ===================== NAVIGATION =====================
+function showPage(page) {
+  state.page = page;
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  document.getElementById('nav-' + page).classList.add('active');
+
+  const content = document.querySelector('.content');
+  if (page === 'groupbuy') {
+    content.classList.add('no-pad');
+  } else {
+    content.classList.remove('no-pad');
+  }
+
+  const titles = {
+    procurement: ['採購管理', '從 Google 表單自動同步的採購申請'],
+    groupbuy: ['團購資料', '記錄和追蹤所有團購活動'],
+    config: ['連接設定', '設定資料來源和 API 連線'],
+  };
+  document.getElementById('page-title').textContent = titles[page][0];
+  document.getElementById('page-sub').textContent = titles[page][1];
+
+  const topbar = document.querySelector('.topbar');
+  topbar.style.display = page === 'groupbuy' ? 'none' : '';
+
+  const actions = document.getElementById('topbar-actions');
+  if (page === 'groupbuy') {
+    actions.innerHTML = '<button class="btn btn-primary" onclick="toggleAddForm()">➕ 新增團購</button>';
+  } else if (page === 'procurement') {
+    actions.innerHTML = '<button class="btn btn-outline" onclick="exportData()">⬇ 匯出</button>';
+  } else {
+    actions.innerHTML = '';
+  }
+
+  renderPage();
+}
+
+function renderPage() {
+  if (state.page === 'procurement') renderProcurement();
+  if (state.page === 'groupbuy') renderGroupbuy();
+}
+
+// ===================== BRAND SWITCH =====================
+function switchBrand(brand) {
+  state.brand = brand;
+  const sidebar = document.getElementById('sidebar');
+  if (brand === 'ttbc') {
+    sidebar.classList.add('ttbc-theme');
+    document.querySelector('.brand-btn.satu').classList.add('inactive');
+    document.querySelector('.brand-btn.ttbc').classList.remove('inactive');
+  } else {
+    sidebar.classList.remove('ttbc-theme');
+    document.querySelector('.brand-btn.satu').classList.remove('inactive');
+    document.querySelector('.brand-btn.ttbc').classList.add('inactive');
+  }
+  document.getElementById('brand-filter').value = brand === 'satu' ? 'Satu' : 'TTBC';
+  filterTable();
+  renderGroupbuy();
+}
+
+// ===================== SYNC =====================
+async function syncData() {
+  const url = state.config.sheetsUrl;
+  if (!url) { showToast('請先在設定填入 Sheets API 網址', 'error'); showPage('config'); return; }
+
+  const btn = document.getElementById('sync-btn');
+  btn.classList.add('syncing');
+  document.getElementById('sync-icon').textContent = '⏳';
+
+  try {
+    // 用 JSONP（<script> 標籤）取代 fetch，避開瀏覽器的 CORS 限制
+    const json = await jsonpRequest(url + (url.includes('?') ? '&' : '?') + 'action=getRequests');
+    if (json.success === false) throw new Error(json.error || '回傳格式錯誤');
+    if (!json.data) throw new Error('回傳內容中找不到 data 欄位，請確認 doGet 的回傳格式');
+
+    state.procurements = json.data.map((row, i) => ({ ...row, _id: i }));
+    saveLocal();
+    renderProcurement();
+    updateBadge();
+    const now = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+    document.getElementById('last-sync').textContent = `上次同步 ${now}`;
+    showToast(`✅ 同步成功，共 ${state.procurements.length} 筆`, 'success');
+  } catch (e) {
+    showToast('同步失敗：' + e.message, 'error');
+  } finally {
+    btn.classList.remove('syncing');
+    document.getElementById('sync-icon').textContent = '🔄';
+  }
+}
+
+async function testConnection() {
+  saveConfig();
+  const url = state.config.sheetsUrl;
+  if (!url) { showToast('請先填入網址', 'error'); return; }
+  const dot = document.getElementById('sheets-dot');
+  const status = document.getElementById('sheets-status');
+  dot.className = 'config-dot';
+  status.textContent = '測試中…';
+  try {
+    const json = await jsonpRequest(url + (url.includes('?') ? '&' : '?') + 'action=getRequests');
+    if (json.success === false) throw new Error(json.error || '格式異常');
+    if (!json.data) throw new Error('回傳內容中找不到 data 欄位');
+    dot.className = 'config-dot ok';
+    status.textContent = `連線成功！共 ${json.data.length} 筆採購申請`;
+    showToast('✅ 連線成功', 'success');
+  } catch (e) {
+    dot.className = 'config-dot err';
+    status.textContent = '連線失敗：' + e.message;
+    showToast('連線失敗', 'error');
+  }
+}
+
+// ===================== PROCUREMENT =====================
+let currentTab = 'all';
+
+// Google 表單自動產生的欄位名稱，有時會跟我們預期的字串有些微差異
+// （例如多了空格、全角的 ＆ （） ？ 跟半角不一樣），直接用 row['完整字串'] 比對常常會抓空。
+// getField 會先試試完全相符，抓不到的話再忽略空白跟全半角符號比對一次，盡量把資料找出來。
+function normKey(s) {
+  return (s || '').toString()
+    .replace(/[\s\u3000]+/g, '')
+    .replace(/＆/g, '&')
+    .replace(/（/g, '(').replace(/）/g, ')')
+    .replace(/？/g, '?')
+    .toLowerCase();
+}
+
+function getField(row, ...candidates) {
+  if (!row) return '';
+  for (const c of candidates) {
+    if (row[c] !== undefined && row[c] !== '') return row[c];
+  }
+  const keys = Object.keys(row).map(k => ({ k, n: normKey(k) }));
+  for (const c of candidates) {
+    const nc = normKey(c);
+    const hit = keys.find(({ n }) => n === nc);
+    if (hit && row[hit.k] !== undefined && row[hit.k] !== '') return row[hit.k];
+  }
+  for (const c of candidates) {
+    const nc = normKey(c);
+    if (!nc) continue;
+    const hit = keys.find(({ n }) => n && (n.includes(nc) || nc.includes(n)));
+    if (hit && row[hit.k] !== undefined && row[hit.k] !== '') return row[hit.k];
+  }
+  return '';
+}
+
+function setTab(tab, el) {
+  currentTab = tab;
+  document.querySelectorAll('.view-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  filterTable();
+}
+
+function getStatus(row) {
+  const id = row._id;
+  if (state.overrides[id] && state.overrides[id].status) return state.overrides[id].status;
+  return 'pending';
+}
+
+function getArrivalDate(row) {
+  const id = row._id;
+  if (state.overrides[id] && state.overrides[id].arrival) return state.overrides[id].arrival;
+  // try to get from sheet data
+  const hope = getField(row, '你希望大貨入庫日', '希望大貨入庫日');
+  return hope ? hope.toString().split('T')[0] : '';
+}
+
+function getFilteredRows() {
+  const search = (document.getElementById('search-input')?.value || '').toLowerCase();
+  const brandF = document.getElementById('brand-filter')?.value || 'all';
+  const typeF = document.getElementById('type-filter')?.value || 'all';
+
+  return state.procurements.filter(row => {
+    const applicant = (getField(row, '申請人') || '').toLowerCase();
+    const project = (getField(row, '專案名稱') || '').toLowerCase();
+    const item = (getField(row, '申請項目', '大貨採購項目&具體規格（顏色、樣式）') || '').toLowerCase();
+    const brand = getField(row, '申請品牌') || '';
+    const status = getStatus(row);
+
+    if (search && !applicant.includes(search) && !project.includes(search) && !item.includes(search)) return false;
+    if (brandF !== 'all' && brand !== brandF) return false;
+    if (currentTab !== 'all' && status !== currentTab) return false;
+
+    if (typeF === 'sample') {
+      const hasSample = getField(row, '樣品採購項目&具體規格（顏色、樣式）', '樣品採購項目&具體', '樣品採購項目');
+      if (!hasSample) return false;
+    }
+    if (typeF === 'bulk') {
+      const hasBulk = getField(row, '大貨採購項目&具體規格（顏色、樣式）', '大貨採購項目');
+      if (!hasBulk) return false;
+    }
+    return true;
+  });
+}
+
+function filterTable() { renderProcurement(); }
+
+function renderProcurement() {
+  const rows = getFilteredRows();
+  const grid = document.getElementById('procurement-grid');
+  const empty = document.getElementById('empty-procurement');
+  document.getElementById('filter-count').textContent = `${rows.length} 筆`;
+
+  // Stats
+  const all = state.procurements;
+  document.getElementById('stat-total').textContent = all.length;
+  document.getElementById('stat-pending').textContent = all.filter(r => getStatus(r) === 'pending').length;
+  document.getElementById('stat-ordered').textContent = all.filter(r => getStatus(r) === 'ordered').length;
+  document.getElementById('stat-arrived').textContent = all.filter(r => getStatus(r) === 'arrived').length;
+
+  if (!rows.length) {
+    grid.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  const statusLabel = { pending: '待處理', approved: '已審批', ordered: '已下單', arrived: '已到貨', cancelled: '已取消' };
+  const stepMap = { pending: 0, approved: 1, ordered: 2, arrived: 3, cancelled: 0 };
+
+  grid.innerHTML = rows.map(row => {
+    const id = row._id;
+    const status = getStatus(row);
+    const arrival = getArrivalDate(row);
+    const o = state.overrides[id] || {};
+    const isSample = !!getField(row, '樣品採購項目&具體規格（顏色、樣式）', '樣品採購項目');
+    const sheetUnitCost = isSample
+      ? getField(row, '樣品單價')
+      : getField(row, '大貨成本（單個）');
+    const sheetTotalCost = isSample
+      ? getField(row, '樣品總額')
+      : getField(row, '大貨成本（總額）');
+    const unitCost = o.unitCost || String(sheetUnitCost || '');
+    const totalCost = o.totalCost || String(sheetTotalCost || '');
+    const ownerPay = o.ownerPay || '';
+    const shipDate = o.shipDate || '';
+    const warehouseDate = o.warehouseInDate || '';
+    const brand = getField(row, '申請品牌') || '';
+    const brandClass = brand === 'Satu' ? 'satu' : 'ttbc';
+    const tsRaw = getField(row, '時間戳記', 'Timestamp') || '';
+    const ts = tsRaw ? (() => { try { return new Date(tsRaw).toLocaleDateString('zh-TW', { month: 'short', day: 'numeric' }); } catch(e) { return String(tsRaw).slice(0,10); } })() : '—';
+    const project = getField(row, '專案名稱') || '';
+    const applicant = getField(row, '申請人') || '—';
+    const step = stepMap[status] || 0;
+
+    // 產品名稱：優先用大貨/樣品的項目與規格欄位（實際列出的產品內容），沒有的話才退回專案名稱
+    const productInfo = getField(row, '大貨採購項目&具體規格（顏色、樣式）', '樣品採購項目&具體規格（顏色、樣式）')
+      || project
+      || getField(row, '申請項目')
+      || '—';
+
+    const designRaw = (getField(row, '需要給Pinky設計需求嗎') || '').toString().trim();
+    const designBadge = designRaw === '需要'
+      ? '<span class="status-badge pending design-badge">🎨 需要設計</span>'
+      : designRaw === '不需要'
+        ? '<span class="status-badge approved design-badge">✅ 不需要設計</span>'
+        : '';
+
+    const isPaid = o.paid || false;
+    const stepLabels = ['待處理','已審批','已下單','已到貨'];
+    const progressSteps = stepLabels.map((label, s) => {
+      const dotClass = s < step ? 'done' : (s === step && status !== 'cancelled' ? 'current' : '');
+      const lineClass = s < step ? 'done' : '';
+      const labelClass = s < step ? 'done' : (s === step && status !== 'cancelled' ? 'current' : '');
+      const line = s < 3 ? `<div class="h-step-line ${lineClass}"></div>` : '';
+      return `<div class="h-step-item"><div class="h-step-dot ${dotClass}"></div><div class="h-step-label ${labelClass}">${label}</div></div>${line}`;
+    }).join('');
+
+    return `<div class="proc-card">
+      <div class="proc-card-top">
+        <div>
+          <div class="proc-card-applicant">${applicant}</div>
+          <div class="proc-card-time">${ts} ・ <span class="td-brand ${brandClass}">${brand}</span>${project ? ' ・ ' + project : ''}</div>
+        </div>
+        <div class="proc-card-badges">
+          <span class="status-badge ${status}">${statusLabel[status]}</span>
+          ${designBadge}
+        </div>
+      </div>
+
+      <div style="margin-bottom:12px">
+        <div class="proc-card-label">產品名稱 / 採購內容</div>
+        <div class="proc-card-product">${productInfo}</div>
+      </div>
+
+      <div class="proc-card-fields">
+        <div class="proc-card-field">
+          <div class="proc-card-label">單個成本</div>
+          <input type="text" class="cost-input ${unitCost ? 'has-value' : ''}" value="${unitCost}"
+            placeholder="例：18.12" onchange="setOverrideField(${id}, 'unitCost', this.value)">
+        </div>
+        <div class="proc-card-field">
+          <div class="proc-card-label">總成本</div>
+          <input type="text" class="cost-input ${totalCost ? 'has-value' : ''}" value="${totalCost}"
+            placeholder="例：20448" onchange="setOverrideField(${id}, 'totalCost', this.value)">
+        </div>
+        <div class="proc-card-field">
+          <div class="proc-card-label">預計出貨</div>
+          <input type="date" class="date-input ${shipDate ? 'has-date' : ''}" value="${shipDate}"
+            onchange="setOverrideField(${id}, 'shipDate', this.value)">
+        </div>
+        <div class="proc-card-field">
+          <div class="proc-card-label">預計入庫</div>
+          <input type="date" class="date-input ${warehouseDate ? 'has-date' : ''}" value="${warehouseDate}"
+            onchange="setOverrideField(${id}, 'warehouseInDate', this.value)">
+        </div>
+        <div class="proc-card-field" style="grid-column:1/-1">
+          <div class="proc-card-label">預計到貨</div>
+          <input type="date" class="date-input ${arrival ? 'has-date' : ''}" value="${arrival}"
+            onchange="setOverrideField(${id}, 'arrival', this.value)">
+        </div>
+      </div>
+
+      <div class="pay-row">
+        <div class="pay-info">
+          <div class="proc-card-label">老闆需要付的金額</div>
+          <input type="text" class="pay-input ${ownerPay ? 'has-value' : ''}" value="${ownerPay}"
+            placeholder="請填寫金額，自己決定要不要寫幣別" onchange="setOverrideField(${id}, 'ownerPay', this.value)">
+        </div>
+        <button class="pay-btn ${isPaid ? 'paid' : ''}" onclick="togglePaid(${id}, this)">
+          ${isPaid ? '✅ 已付款' : '標記已付款'}
+        </button>
+      </div>
+
+      <div class="h-progress">${progressSteps}</div>
+
+      <div class="proc-card-footer">
+        <span></span>
+        <button class="detail-btn" onclick="openModal(${id})">詳情 →</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function togglePaid(id, btn) {
+  if (!state.overrides[id]) state.overrides[id] = {};
+  const isPaid = !state.overrides[id].paid;
+  state.overrides[id].paid = isPaid;
+  saveLocal();
+  btn.classList.toggle('paid', isPaid);
+  btn.textContent = isPaid ? '✅ 已付款' : '標記已付款';
+  showToast(isPaid ? '✅ 已標記付款' : '已取消付款');
+}
+
+function setOverrideField(id, field, val) {
+  if (!state.overrides[id]) state.overrides[id] = {};
+  state.overrides[id][field] = val;
+  saveLocal();
+  showToast('✅ 已儲存');
+  renderProcurement();
+}
+
+function updateBadge() {
+  const pending = state.procurements.filter(r => getStatus(r) === 'pending').length;
+  const badge = document.getElementById('pending-badge');
+  badge.textContent = pending;
+  badge.style.display = pending ? 'inline-block' : 'none';
+}
+
+// ===================== MODAL =====================
+let modalId = null;
+
+function openModal(id) {
+  modalId = id;
+  const row = state.procurements.find(r => r._id === id);
+  if (!row) return;
+
+  const override = state.overrides[id] || {};
+  document.getElementById('modal-project-name').textContent = getField(row, '專案名稱') || '（無專案名稱）';
+  const tsForModal = getField(row, '時間戳記', 'Timestamp');
+  document.getElementById('modal-timestamp').textContent = tsForModal ? new Date(tsForModal).toLocaleString('zh-TW') : '—';
+
+  const set = (el, val) => {
+    const e = document.getElementById(el);
+    if (!e) return;
+    const v = (val !== undefined && val !== null) ? String(val) : '';
+    e.textContent = v || '—';
+    if (!v) e.className = 'value empty'; else e.className = 'value';
+  };
+
+  // 欄位名稱對應你的 Apps Script CONFIG（表單回覆 1 的欄位）
+  set('md-applicant', getField(row, '申請人'));
+  set('md-brand', getField(row, '申請品牌'));
+  set('md-email', getField(row, '電子郵件地址'));
+  set('md-item', getField(row, '申請項目'));
+  set('md-sample-item', getField(row, '樣品採購項目&具體規格（顏色、樣式）'));
+  set('md-sample-qty', getField(row, '樣品採購數量'));
+  set('md-sample-addr', getField(row, '樣品寄出地點'));
+  const samplePrice = getField(row, '樣品目標單價');
+  set('md-sample-price', samplePrice ? 'RM ' + samplePrice : '');
+  set('md-sample-date', getField(row, '你希望獲得樣品的日期'));
+  set('md-nicole', getField(row, '你確認樣品給Nicole的日期'));
+  set('md-bulk-item', getField(row, '大貨採購項目&具體規格（顏色、樣式）'));
+  set('md-bulk-qty', getField(row, '大貨採購數量'));
+  set('md-bulk-cost', getField(row, '大貨成本（單個及總數）'));
+  set('md-packing', getField(row, '單入包裝方式'));
+  set('md-bulk-date', getField(row, '你希望大貨入庫日'));
+
+  // 設計需求（原始表單填寫，唯讀）
+  const designNeeded = (getField(row, '需要給Pinky設計需求嗎') || '').toString().trim();
+  const designEl = document.getElementById('md-design-needed');
+  if (designNeeded === '需要') {
+    designEl.innerHTML = '<span class="status-badge pending">🎨 需要設計師出稿</span>';
+  } else if (designNeeded === '不需要') {
+    designEl.innerHTML = '<span class="status-badge approved">✅ 不需要設計</span>';
+  } else {
+    designEl.innerHTML = '—';
+  }
+  set('md-design-deadline', getField(row, '希望Pinky提供設計稿的時間（Pinky說最少抓7天）'));
+  set('md-design-notes', getField(row, '你對產品設計有什麼需求？'));
+
+  document.getElementById('md-status-select').value = override.status || 'pending';
+  document.getElementById('md-arrival-date').value = override.arrival || '';
+  document.getElementById('md-unit-cost').value = override.unitCost || '';
+  document.getElementById('md-total-cost').value = override.totalCost || '';
+  document.getElementById('md-owner-pay').value = override.ownerPay || '';
+  document.getElementById('md-ship-date').value = override.shipDate || '';
+  document.getElementById('md-warehouse-date').value = override.warehouseInDate || '';
+  document.getElementById('md-notes').value = override.notes || '';
+
+  document.getElementById('detail-modal').classList.add('show');
+}
+
+function closeModal() {
+  document.getElementById('detail-modal').classList.remove('show');
+  modalId = null;
+}
+
+function saveModalChanges() {
+  if (modalId === null) return;
+  if (!state.overrides[modalId]) state.overrides[modalId] = {};
+  state.overrides[modalId].status = document.getElementById('md-status-select').value;
+  state.overrides[modalId].arrival = document.getElementById('md-arrival-date').value;
+  state.overrides[modalId].unitCost = document.getElementById('md-unit-cost').value;
+  state.overrides[modalId].totalCost = document.getElementById('md-total-cost').value;
+  state.overrides[modalId].ownerPay = document.getElementById('md-owner-pay').value;
+  state.overrides[modalId].shipDate = document.getElementById('md-ship-date').value;
+  state.overrides[modalId].warehouseInDate = document.getElementById('md-warehouse-date').value;
+  state.overrides[modalId].notes = document.getElementById('md-notes').value;
+  saveLocal();
+  updateBadge();
+  renderProcurement();
+  closeModal();
+  showToast('✅ 已儲存', 'success');
+}
+
+document.getElementById('detail-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+// ===================== GROUPBUY =====================
+function toggleAddForm() {
+  const form = document.getElementById('add-gb-form');
+  form.classList.toggle('show');
+}
+
+function addGroupbuy() {
+  const gb = {
+    id: Date.now(),
+    name: document.getElementById('gb-name').value.trim(),
+    brand: document.getElementById('gb-brand').value,
+    kol: document.getElementById('gb-kol').value.trim(),
+    start: document.getElementById('gb-start').value,
+    end: document.getElementById('gb-end').value,
+    target: parseFloat(document.getElementById('gb-target').value) || 0,
+    actual: parseFloat(document.getElementById('gb-actual').value) || 0,
+    orders: parseInt(document.getElementById('gb-orders').value) || 0,
+    platform: document.getElementById('gb-platform').value,
+    notes: document.getElementById('gb-notes').value.trim(),
+    status: 'active',
+  };
+  if (!gb.name) { showToast('請輸入團購名稱', 'error'); return; }
+  state.groupbuys.unshift(gb);
+  saveLocal();
+  renderGroupbuy();
+  toggleAddForm();
+  document.getElementById('add-gb-form').querySelectorAll('input,textarea').forEach(el => el.value = '');
+  showToast('✅ 團購已新增', 'success');
+}
+
+function renderGroupbuy() {
+  const list = document.getElementById('gb-list');
+  const empty = document.getElementById('empty-gb');
+  if (!list || !empty) return; // 團購頁已改為 iframe，元素不存在時直接跳出
+  const gbs = state.groupbuys.filter(g => state.brand === 'satu' ? g.brand === 'Satu' : g.brand === 'TTBC');
+
+  if (!gbs.length) { list.innerHTML = ''; empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+
+  const statusColor = { active: '#F59E0B', completed: '#10B981', cancelled: '#EF4444' };
+  const statusLabel = { active: '進行中', completed: '已完成', cancelled: '已取消' };
+
+  list.innerHTML = gbs.map(gb => {
+    const pct = gb.target > 0 ? Math.min(100, Math.round(gb.actual / gb.target * 100)) : 0;
+    const color = statusColor[gb.status] || '#6B7280';
+    return `<div class="gb-card">
+      <div class="gb-status-bar" style="background:${color}"></div>
+      <div class="gb-content">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+          <div class="gb-title">${gb.name}</div>
+          <span class="status-badge ${gb.status === 'active' ? 'pending' : gb.status === 'completed' ? 'approved' : 'cancelled'}">${statusLabel[gb.status]}</span>
+        </div>
+        <div class="gb-meta">
+          ${gb.kol ? `<span>👤 ${gb.kol}</span>` : ''}
+          ${gb.platform ? `<span>📱 ${gb.platform}</span>` : ''}
+          ${gb.start ? `<span>📅 ${gb.start}${gb.end ? ' → ' + gb.end : ''}</span>` : ''}
+        </div>
+        ${gb.target > 0 ? `
+        <div style="margin-top:10px">
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-secondary);margin-bottom:4px">
+            <span>目標達成率</span><span>${pct}% (RM ${gb.actual.toLocaleString()} / ${gb.target.toLocaleString()})</span>
+          </div>
+          <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:var(--brand-satu);border-radius:3px;transition:width 0.6s"></div>
+          </div>
+        </div>` : ''}
+        ${gb.notes ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:8px">${gb.notes}</div>` : ''}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+        <select style="font-size:11px;padding:4px 6px;border:1.5px solid var(--border);border-radius:6px" onchange="setGbStatus(${gb.id},this.value)">
+          <option value="active" ${gb.status==='active'?'selected':''}>進行中</option>
+          <option value="completed" ${gb.status==='completed'?'selected':''}>已完成</option>
+          <option value="cancelled" ${gb.status==='cancelled'?'selected':''}>已取消</option>
+        </select>
+        <button class="detail-btn" onclick="deleteGb(${gb.id})" style="color:var(--status-cancelled);font-size:11px">刪除</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function setGbStatus(id, status) {
+  const gb = state.groupbuys.find(g => g.id === id);
+  if (gb) { gb.status = status; saveLocal(); renderGroupbuy(); }
+}
+
+function deleteGb(id) {
+  if (!confirm('確定要刪除這個團購記錄？')) return;
+  state.groupbuys = state.groupbuys.filter(g => g.id !== id);
+  saveLocal();
+  renderGroupbuy();
+  showToast('已刪除');
+}
+
+// ===================== EXPORT =====================
+function exportData() {
+  const rows = getFilteredRows();
+  if (!rows.length) { showToast('沒有資料可匯出', 'error'); return; }
+  const headers = Object.keys(rows[0]).filter(k => !k.startsWith('_'));
+  headers.push('目前狀態', '預計出貨日', '預計入庫日', '預計到貨日', '單個成本', '總成本', '老闆需要付的金額', '備註');
+  const csv = [headers.join(','), ...rows.map(row => {
+    const o = state.overrides[row._id] || {};
+    const vals = headers.map(h => {
+      if (h === '目前狀態') return o.status || 'pending';
+      if (h === '預計出貨日') return o.shipDate || '';
+      if (h === '預計入庫日') return o.warehouseInDate || '';
+      if (h === '預計到貨日') return o.arrival || '';
+      if (h === '單個成本') return o.unitCost || '';
+      if (h === '總成本') return o.totalCost || '';
+      if (h === '老闆需要付的金額') return o.ownerPay || '';
+      if (h === '備註') return o.notes || '';
+      return '"' + (row[h] || '').toString().replace(/"/g, '""') + '"';
+    });
+    return vals.join(',');
+  })].join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `採購資料_${new Date().toLocaleDateString('zh-TW').replace(/\//g,'-')}.csv`;
+  a.click();
+  showToast('✅ 匯出成功');
+}
+
+function copyScript() {
+  openScriptModal();
+  const hint = document.getElementById('script-modal-hint');
+  // navigator.clipboard 需要 https 或 localhost 才能用；
+  // 用 file:// 直接打開網頁，或某些瀏覽器權限被擋時會「靜默失敗」，
+  // 所以一定要把程式碼顯示出來，讓使用者隨時可以手動選取複製。
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(APPS_SCRIPT).then(() => {
+      showToast('✅ 已複製到剪貼簿，下方視窗可再次確認內容');
+    }).catch(() => {
+      hint.innerHTML = '⚠️ 自動複製失敗，請點一下下方文字框，再按 <strong>Ctrl+C</strong>（Mac 用 <strong>⌘+C</strong>）手動複製。';
+      showToast('自動複製失敗，請手動複製下方內容', 'error');
+    });
+  } else {
+    hint.innerHTML = '⚠️ 這個瀏覽器環境（例如直接以檔案開啟、非 https）不支援自動複製，請點一下下方文字框，再按 <strong>Ctrl+C</strong>（Mac 用 <strong>⌘+C</strong>）手動複製。';
+  }
+}
+
+function openScriptModal() {
+  const ta = document.getElementById('script-textarea');
+  ta.value = APPS_SCRIPT;
+  document.getElementById('script-modal-hint').innerHTML = '內容已自動選取，按 <strong>Ctrl+C</strong>（Mac 用 <strong>⌘+C</strong>）複製，再貼到你的 Apps Script 編輯器裡。';
+  document.getElementById('script-modal').classList.add('show');
+  setTimeout(() => { ta.focus(); ta.select(); }, 50);
+}
+
+function closeScriptModal() {
+  document.getElementById('script-modal').classList.remove('show');
+}
+
+document.getElementById('script-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeScriptModal();
+});
+
+// ===================== TOAST =====================
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (type ? ' ' + type : '');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+</script>
+</body>
+</html>
