@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BrandHub — Satu & TTBC</title>
+<title>BrandHub — Satu</title>
 <style>
   :root {
     --brand-satu: #6B3FA0;
@@ -333,8 +333,8 @@
 
   .page { display: none; }
   .page.active { display: block; }
-  #page-groupbuy.active { display: flex; flex-direction: column; padding: 0; height: 100%; }
-  .content.no-pad { padding: 0; overflow: hidden; display: flex; flex-direction: column; flex: 1; }
+  #page-groupbuy.active { display: flex; flex-direction: column; padding: 0; position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+  .content.no-pad { padding: 0; overflow: hidden; position: relative; flex: 1; }
   .content.no-pad #page-groupbuy.active { flex: 1; height: 100%; }
   .content.no-pad #page-groupbuy.active iframe { flex: 1; height: 100%; width: 100%; border: none; display: block; }
 
@@ -342,19 +342,155 @@
   .ttbc-theme .brand-btn.satu { background: transparent; color: rgba(255,255,255,0.35); border-color: rgba(255,255,255,0.1); }
   .ttbc-theme .brand-btn.ttbc { background: var(--brand-ttbc); color: white; }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js">
+// ===================== PROFIT =====================
+const PROFIT_URL = 'https://script.google.com/macros/s/AKfycbxtH2BJVdpjB7owh9GkL-bVCJ5Bk0iRWsGQGXThUX3jN5NWzKYRGAZr4DLcOL99Ux5sEg/exec';
+let profitChart = null;
+let profitLoaded = false;
+
+function loadProfit() {
+  if (profitLoaded) return;
+  document.getElementById('profit-loading').style.display = 'block';
+  document.getElementById('profit-content').style.display = 'none';
+  document.getElementById('profit-error').style.display = 'none';
+
+  const cb = 'cb_' + Date.now();
+  const script = document.createElement('script');
+  window[cb] = function(json) {
+    delete window[cb];
+    script.remove();
+    if (!json.success) {
+      document.getElementById('profit-loading').style.display = 'none';
+      document.getElementById('profit-error').style.display = 'block';
+      document.getElementById('profit-error').textContent = '載入失敗：' + json.error;
+      return;
+    }
+    renderProfit(json.data);
+    profitLoaded = true;
+  };
+  script.src = PROFIT_URL + '?callback=' + cb;
+  document.body.appendChild(script);
+}
+
+function renderProfit(data) {
+  // data is array of rows, first row is headers [""," ","1月","2月",...,"12月","總額"]
+  // second row is ["","金額","金額",...]
+  // rows from index 2 onward are data rows
+
+  const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+  
+  // Find column indices for each month
+  const headerRow = data[0];
+  const monthCols = {};
+  months.forEach(m => {
+    const idx = headerRow.indexOf(m);
+    if (idx !== -1) monthCols[m] = idx;
+  });
+  const totalCol = headerRow.indexOf('總額');
+
+  // Find key rows
+  function findRow(label) {
+    return data.find(r => (r[0]||'').toString().trim() === label || (r[1]||'').toString().trim() === label);
+  }
+
+  const rowRevenue   = findRow('總業績');
+  const rowAdTotal   = findRow('廣告總花費');
+  const rowProfit    = findRow('淨利');
+  const rowProfitPct = findRow('淨利%');
+  const rowOrders    = findRow('成交訂單（不含退貨，取消訂單）');
+
+  function getVal(row, col) {
+    if (!row || col === undefined) return 0;
+    const v = row[col];
+    if (!v && v !== 0) return 0;
+    if (typeof v === 'number') return v;
+    return parseFloat(v.toString().replace(/[^0-9.-]/g, '')) || 0;
+  }
+
+  // Stats cards - use total column
+  const totalRevenue = getVal(rowRevenue, totalCol);
+  const totalProfit  = getVal(rowProfit, totalCol);
+  const avgProfitPct = rowProfitPct ? (() => {
+    const vals = months.map(m => monthCols[m]).filter(c=>c!==undefined).map(c => getVal(rowProfitPct, c)).filter(v=>v>0);
+    return vals.length ? (vals.reduce((a,b)=>a+b,0)/vals.length) : 0;
+  })() : 0;
+
+  document.getElementById('profit-stats').innerHTML = `
+    <div class="stat-card total"><div class="stat-num">RM ${totalRevenue.toLocaleString('en-MY', {minimumFractionDigits:0, maximumFractionDigits:0})}</div><div class="stat-label">年度總業績</div></div>
+    <div class="stat-card arrived"><div class="stat-num">RM ${totalProfit.toLocaleString('en-MY', {minimumFractionDigits:0, maximumFractionDigits:0})}</div><div class="stat-label">年度淨利</div></div>
+    <div class="stat-card pending"><div class="stat-num">${avgProfitPct.toFixed(1)}%</div><div class="stat-label">平均淨利率</div></div>
+  `;
+
+  // Chart
+  const chartMonths = months.filter(m => monthCols[m] !== undefined && getVal(rowRevenue, monthCols[m]) > 0);
+  const revenueData = chartMonths.map(m => getVal(rowRevenue, monthCols[m]));
+  const profitData  = chartMonths.map(m => getVal(rowProfit, monthCols[m]));
+
+  if (profitChart) profitChart.destroy();
+  const ctx = document.getElementById('profit-chart').getContext('2d');
+  profitChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: chartMonths,
+      datasets: [
+        { label: '總業績', data: revenueData, backgroundColor: 'rgba(107,63,160,0.15)', borderColor: '#6B3FA0', borderWidth: 2, borderRadius: 6, order: 2 },
+        { label: '淨利', data: profitData, type: 'line', borderColor: '#10B981', backgroundColor: 'rgba(16,185,129,0.1)', borderWidth: 2.5, pointRadius: 4, pointBackgroundColor: '#10B981', fill: true, tension: 0.3, order: 1 }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': RM ' + ctx.parsed.y.toLocaleString() } } },
+      scales: { y: { ticks: { callback: v => 'RM ' + v.toLocaleString() } } }
+    }
+  });
+
+  // Table
+  const keyRows = [
+    '總業績','廣告總花費','廣告總業績','FB花費','FB廣告ROAS','Google 花費','Google 廣告ROAS',
+    '開團業績','開團抽成（含保底費）','官網自然業績','Tiktok Shop',
+    '出貨商品總成本','淨利','淨利%','成交訂單（不含退貨，取消訂單）','真實訂單'
+  ];
+
+  const activeCols = months.filter(m => monthCols[m] !== undefined);
+  
+  let tableHtml = '<thead><tr style="background:#F3EFFE"><th style="padding:8px 12px;text-align:left;font-size:12px;color:#6B3FA0">項目</th>';
+  activeCols.forEach(m => { tableHtml += `<th style="padding:8px 12px;text-align:right;font-size:12px;color:#6B3FA0">${m}</th>`; });
+  if (totalCol !== -1) tableHtml += '<th style="padding:8px 12px;text-align:right;font-size:12px;color:#6B3FA0">總額</th>';
+  tableHtml += '</tr></thead><tbody>';
+
+  data.slice(2).forEach((row, i) => {
+    const label = (row[0]||row[1]||'').toString().trim();
+    if (!label || label === '合計') return;
+    const bg = i % 2 === 0 ? '' : 'background:#FAFAFA';
+    const isBold = label === '淨利' || label === '總業績';
+    tableHtml += `<tr style="${bg}"><td style="padding:8px 12px;font-size:12px;${isBold?'font-weight:700':''}">${label}</td>`;
+    activeCols.forEach(m => {
+      const v = row[monthCols[m]];
+      const display = v === '' || v === undefined || v === null ? '—' : (typeof v === 'number' ? (label.includes('%') || label.includes('ROAS') ? v : 'RM ' + v.toLocaleString()) : v);
+      tableHtml += `<td style="padding:8px 12px;text-align:right;font-size:12px;${isBold?'font-weight:700;color:#6B3FA0':''}">${display}</td>`;
+    });
+    if (totalCol !== -1) {
+      const tv = row[totalCol];
+      const tdisplay = tv === '' || tv === undefined || tv === null ? '—' : (typeof tv === 'number' ? (label.includes('%') || label.includes('ROAS') ? tv : 'RM ' + tv.toLocaleString()) : tv);
+      tableHtml += `<td style="padding:8px 12px;text-align:right;font-size:12px;font-weight:600;${isBold?'color:#6B3FA0':''}">${tdisplay}</td>`;
+    }
+    tableHtml += '</tr>';
+  });
+
+  tableHtml += '</tbody>';
+  document.getElementById('profit-table').innerHTML = tableHtml;
+  document.getElementById('profit-loading').style.display = 'none';
+  document.getElementById('profit-content').style.display = 'block';
+}
+
+</script>
 </head>
 <body>
 
 <!-- SIDEBAR -->
 <aside class="sidebar" id="sidebar">
   <div class="sidebar-logo"><span>Brand<span class="dot">Hub</span></span></div>
-  <div class="sidebar-brand">
-    <div class="brand-label">切換品牌</div>
-    <div class="brand-switch">
-      <button class="brand-btn satu" onclick="switchBrand('satu')">Satu</button>
-      <button class="brand-btn ttbc inactive" onclick="switchBrand('ttbc')">TTBC</button>
-    </div>
-  </div>
+
   <nav class="sidebar-nav">
     <div class="nav-section-label">主要功能</div>
     <div class="nav-item active" onclick="showPage('procurement')" id="nav-procurement">
@@ -364,15 +500,8 @@
     <div class="nav-item" onclick="showPage('groupbuy')" id="nav-groupbuy">
       <span class="icon">🛍️</span> 團購資料
     </div>
-    <div class="nav-section-label">即將推出</div>
-    <div class="nav-item" style="opacity:0.4;cursor:not-allowed">
+    <div class="nav-item" onclick="showPage('profit')" id="nav-profit">
       <span class="icon">💰</span> 利潤表
-    </div>
-    <div class="nav-item" style="opacity:0.4;cursor:not-allowed">
-      <span class="icon">🌟</span> KOL Seeding
-    </div>
-    <div class="nav-item" style="opacity:0.4;cursor:not-allowed">
-      <span class="icon">📊</span> 庫存管理
     </div>
     <div class="nav-section-label">設定</div>
     <div class="nav-item" onclick="showPage('config')" id="nav-config">
@@ -423,7 +552,6 @@
         <select class="filter-select" id="brand-filter" onchange="filterTable()">
           <option value="all">全部品牌</option>
           <option value="Satu">Satu</option>
-          <option value="TTBC">TTBC</option>
         </select>
         <select class="filter-select" id="type-filter" onchange="filterTable()">
           <option value="all">樣品 + 大貨</option>
@@ -449,6 +577,21 @@
         allow="clipboard-read; clipboard-write"
         id="groupbuy-iframe"
       ></iframe>
+    </div>
+
+    <!-- PROFIT PAGE -->
+    <div class="page" id="page-profit">
+      <div id="profit-loading" style="text-align:center;padding:60px;color:#6B7280">載入中…</div>
+      <div id="profit-content" style="display:none">
+        <div class="stats-row" id="profit-stats"></div>
+        <div style="background:white;border-radius:14px;border:1px solid #E5E7EB;padding:20px;margin-bottom:20px">
+          <canvas id="profit-chart" height="80"></canvas>
+        </div>
+        <div style="background:white;border-radius:14px;border:1px solid #E5E7EB;padding:20px;overflow-x:auto">
+          <table id="profit-table" style="width:100%;border-collapse:collapse;font-size:13px"></table>
+        </div>
+      </div>
+      <div id="profit-error" style="display:none;text-align:center;padding:60px;color:#EF4444"></div>
     </div>
 
     <!-- CONFIG PAGE -->
@@ -775,6 +918,7 @@ function showPage(page) {
   const titles = {
     procurement: ['採購管理', '從 Google 表單自動同步的採購申請'],
     groupbuy: ['團購資料', '記錄和追蹤所有團購活動'],
+    profit: ['利潤表', 'Satu 每月營收與利潤分析'],
     config: ['連接設定', '設定資料來源和 API 連線'],
   };
   document.getElementById('page-title').textContent = titles[page][0];
@@ -798,6 +942,7 @@ function showPage(page) {
 function renderPage() {
   if (state.page === 'procurement') renderProcurement();
   if (state.page === 'groupbuy') renderGroupbuy();
+  if (state.page === 'profit') loadProfit();
 }
 
 // ===================== BRAND SWITCH =====================
@@ -1372,6 +1517,147 @@ function showToast(msg, type = '') {
   t.className = 'toast show' + (type ? ' ' + type : '');
   setTimeout(() => t.classList.remove('show'), 3000);
 }
+
+// ===================== PROFIT =====================
+const PROFIT_URL = 'https://script.google.com/macros/s/AKfycbxtH2BJVdpjB7owh9GkL-bVCJ5Bk0iRWsGQGXThUX3jN5NWzKYRGAZr4DLcOL99Ux5sEg/exec';
+let profitChart = null;
+let profitLoaded = false;
+
+function loadProfit() {
+  if (profitLoaded) return;
+  document.getElementById('profit-loading').style.display = 'block';
+  document.getElementById('profit-content').style.display = 'none';
+  document.getElementById('profit-error').style.display = 'none';
+
+  const cb = 'cb_' + Date.now();
+  const script = document.createElement('script');
+  window[cb] = function(json) {
+    delete window[cb];
+    script.remove();
+    if (!json.success) {
+      document.getElementById('profit-loading').style.display = 'none';
+      document.getElementById('profit-error').style.display = 'block';
+      document.getElementById('profit-error').textContent = '載入失敗：' + json.error;
+      return;
+    }
+    renderProfit(json.data);
+    profitLoaded = true;
+  };
+  script.src = PROFIT_URL + '?callback=' + cb;
+  document.body.appendChild(script);
+}
+
+function renderProfit(data) {
+  // data is array of rows, first row is headers [""," ","1月","2月",...,"12月","總額"]
+  // second row is ["","金額","金額",...]
+  // rows from index 2 onward are data rows
+
+  const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+  
+  // Find column indices for each month
+  const headerRow = data[0];
+  const monthCols = {};
+  months.forEach(m => {
+    const idx = headerRow.indexOf(m);
+    if (idx !== -1) monthCols[m] = idx;
+  });
+  const totalCol = headerRow.indexOf('總額');
+
+  // Find key rows
+  function findRow(label) {
+    return data.find(r => (r[0]||'').toString().trim() === label || (r[1]||'').toString().trim() === label);
+  }
+
+  const rowRevenue   = findRow('總業績');
+  const rowAdTotal   = findRow('廣告總花費');
+  const rowProfit    = findRow('淨利');
+  const rowProfitPct = findRow('淨利%');
+  const rowOrders    = findRow('成交訂單（不含退貨，取消訂單）');
+
+  function getVal(row, col) {
+    if (!row || col === undefined) return 0;
+    const v = row[col];
+    if (!v && v !== 0) return 0;
+    if (typeof v === 'number') return v;
+    return parseFloat(v.toString().replace(/[^0-9.-]/g, '')) || 0;
+  }
+
+  // Stats cards - use total column
+  const totalRevenue = getVal(rowRevenue, totalCol);
+  const totalProfit  = getVal(rowProfit, totalCol);
+  const avgProfitPct = rowProfitPct ? (() => {
+    const vals = months.map(m => monthCols[m]).filter(c=>c!==undefined).map(c => getVal(rowProfitPct, c)).filter(v=>v>0);
+    return vals.length ? (vals.reduce((a,b)=>a+b,0)/vals.length) : 0;
+  })() : 0;
+
+  document.getElementById('profit-stats').innerHTML = `
+    <div class="stat-card total"><div class="stat-num">RM ${totalRevenue.toLocaleString('en-MY', {minimumFractionDigits:0, maximumFractionDigits:0})}</div><div class="stat-label">年度總業績</div></div>
+    <div class="stat-card arrived"><div class="stat-num">RM ${totalProfit.toLocaleString('en-MY', {minimumFractionDigits:0, maximumFractionDigits:0})}</div><div class="stat-label">年度淨利</div></div>
+    <div class="stat-card pending"><div class="stat-num">${avgProfitPct.toFixed(1)}%</div><div class="stat-label">平均淨利率</div></div>
+  `;
+
+  // Chart
+  const chartMonths = months.filter(m => monthCols[m] !== undefined && getVal(rowRevenue, monthCols[m]) > 0);
+  const revenueData = chartMonths.map(m => getVal(rowRevenue, monthCols[m]));
+  const profitData  = chartMonths.map(m => getVal(rowProfit, monthCols[m]));
+
+  if (profitChart) profitChart.destroy();
+  const ctx = document.getElementById('profit-chart').getContext('2d');
+  profitChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: chartMonths,
+      datasets: [
+        { label: '總業績', data: revenueData, backgroundColor: 'rgba(107,63,160,0.15)', borderColor: '#6B3FA0', borderWidth: 2, borderRadius: 6, order: 2 },
+        { label: '淨利', data: profitData, type: 'line', borderColor: '#10B981', backgroundColor: 'rgba(16,185,129,0.1)', borderWidth: 2.5, pointRadius: 4, pointBackgroundColor: '#10B981', fill: true, tension: 0.3, order: 1 }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': RM ' + ctx.parsed.y.toLocaleString() } } },
+      scales: { y: { ticks: { callback: v => 'RM ' + v.toLocaleString() } } }
+    }
+  });
+
+  // Table
+  const keyRows = [
+    '總業績','廣告總花費','廣告總業績','FB花費','FB廣告ROAS','Google 花費','Google 廣告ROAS',
+    '開團業績','開團抽成（含保底費）','官網自然業績','Tiktok Shop',
+    '出貨商品總成本','淨利','淨利%','成交訂單（不含退貨，取消訂單）','真實訂單'
+  ];
+
+  const activeCols = months.filter(m => monthCols[m] !== undefined);
+  
+  let tableHtml = '<thead><tr style="background:#F3EFFE"><th style="padding:8px 12px;text-align:left;font-size:12px;color:#6B3FA0">項目</th>';
+  activeCols.forEach(m => { tableHtml += `<th style="padding:8px 12px;text-align:right;font-size:12px;color:#6B3FA0">${m}</th>`; });
+  if (totalCol !== -1) tableHtml += '<th style="padding:8px 12px;text-align:right;font-size:12px;color:#6B3FA0">總額</th>';
+  tableHtml += '</tr></thead><tbody>';
+
+  data.slice(2).forEach((row, i) => {
+    const label = (row[0]||row[1]||'').toString().trim();
+    if (!label || label === '合計') return;
+    const bg = i % 2 === 0 ? '' : 'background:#FAFAFA';
+    const isBold = label === '淨利' || label === '總業績';
+    tableHtml += `<tr style="${bg}"><td style="padding:8px 12px;font-size:12px;${isBold?'font-weight:700':''}">${label}</td>`;
+    activeCols.forEach(m => {
+      const v = row[monthCols[m]];
+      const display = v === '' || v === undefined || v === null ? '—' : (typeof v === 'number' ? (label.includes('%') || label.includes('ROAS') ? v : 'RM ' + v.toLocaleString()) : v);
+      tableHtml += `<td style="padding:8px 12px;text-align:right;font-size:12px;${isBold?'font-weight:700;color:#6B3FA0':''}">${display}</td>`;
+    });
+    if (totalCol !== -1) {
+      const tv = row[totalCol];
+      const tdisplay = tv === '' || tv === undefined || tv === null ? '—' : (typeof tv === 'number' ? (label.includes('%') || label.includes('ROAS') ? tv : 'RM ' + tv.toLocaleString()) : tv);
+      tableHtml += `<td style="padding:8px 12px;text-align:right;font-size:12px;font-weight:600;${isBold?'color:#6B3FA0':''}">${tdisplay}</td>`;
+    }
+    tableHtml += '</tr>';
+  });
+
+  tableHtml += '</tbody>';
+  document.getElementById('profit-table').innerHTML = tableHtml;
+  document.getElementById('profit-loading').style.display = 'none';
+  document.getElementById('profit-content').style.display = 'block';
+}
+
 </script>
 </body>
 </html>
