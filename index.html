@@ -342,148 +342,7 @@
   .ttbc-theme .brand-btn.satu { background: transparent; color: rgba(255,255,255,0.35); border-color: rgba(255,255,255,0.1); }
   .ttbc-theme .brand-btn.ttbc { background: var(--brand-ttbc); color: white; }
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js">
-// ===================== PROFIT =====================
-const PROFIT_URL = 'https://script.google.com/macros/s/AKfycbxtH2BJVdpjB7owh9GkL-bVCJ5Bk0iRWsGQGXThUX3jN5NWzKYRGAZr4DLcOL99Ux5sEg/exec';
-let profitChart = null;
-let profitLoaded = false;
-
-function loadProfit() {
-  if (profitLoaded) return;
-  document.getElementById('profit-loading').style.display = 'block';
-  document.getElementById('profit-content').style.display = 'none';
-  document.getElementById('profit-error').style.display = 'none';
-
-  const cb = 'cb_' + Date.now();
-  const script = document.createElement('script');
-  window[cb] = function(json) {
-    delete window[cb];
-    script.remove();
-    if (!json.success) {
-      document.getElementById('profit-loading').style.display = 'none';
-      document.getElementById('profit-error').style.display = 'block';
-      document.getElementById('profit-error').textContent = '載入失敗：' + json.error;
-      return;
-    }
-    renderProfit(json.data);
-    profitLoaded = true;
-  };
-  script.src = PROFIT_URL + '?callback=' + cb;
-  document.body.appendChild(script);
-}
-
-function renderProfit(data) {
-  // data is array of rows, first row is headers [""," ","1月","2月",...,"12月","總額"]
-  // second row is ["","金額","金額",...]
-  // rows from index 2 onward are data rows
-
-  const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
-  
-  // Find column indices for each month
-  const headerRow = data[0];
-  const monthCols = {};
-  months.forEach(m => {
-    const idx = headerRow.indexOf(m);
-    if (idx !== -1) monthCols[m] = idx;
-  });
-  const totalCol = headerRow.indexOf('總額');
-
-  // Find key rows
-  function findRow(label) {
-    return data.find(r => (r[0]||'').toString().trim() === label || (r[1]||'').toString().trim() === label);
-  }
-
-  const rowRevenue   = findRow('總業績');
-  const rowAdTotal   = findRow('廣告總花費');
-  const rowProfit    = findRow('淨利');
-  const rowProfitPct = findRow('淨利%');
-  const rowOrders    = findRow('成交訂單（不含退貨，取消訂單）');
-
-  function getVal(row, col) {
-    if (!row || col === undefined) return 0;
-    const v = row[col];
-    if (!v && v !== 0) return 0;
-    if (typeof v === 'number') return v;
-    return parseFloat(v.toString().replace(/[^0-9.-]/g, '')) || 0;
-  }
-
-  // Stats cards - use total column
-  const totalRevenue = getVal(rowRevenue, totalCol);
-  const totalProfit  = getVal(rowProfit, totalCol);
-  const avgProfitPct = rowProfitPct ? (() => {
-    const vals = months.map(m => monthCols[m]).filter(c=>c!==undefined).map(c => getVal(rowProfitPct, c)).filter(v=>v>0);
-    return vals.length ? (vals.reduce((a,b)=>a+b,0)/vals.length) : 0;
-  })() : 0;
-
-  document.getElementById('profit-stats').innerHTML = `
-    <div class="stat-card total"><div class="stat-num">RM ${totalRevenue.toLocaleString('en-MY', {minimumFractionDigits:0, maximumFractionDigits:0})}</div><div class="stat-label">年度總業績</div></div>
-    <div class="stat-card arrived"><div class="stat-num">RM ${totalProfit.toLocaleString('en-MY', {minimumFractionDigits:0, maximumFractionDigits:0})}</div><div class="stat-label">年度淨利</div></div>
-    <div class="stat-card pending"><div class="stat-num">${avgProfitPct.toFixed(1)}%</div><div class="stat-label">平均淨利率</div></div>
-  `;
-
-  // Chart
-  const chartMonths = months.filter(m => monthCols[m] !== undefined && getVal(rowRevenue, monthCols[m]) > 0);
-  const revenueData = chartMonths.map(m => getVal(rowRevenue, monthCols[m]));
-  const profitData  = chartMonths.map(m => getVal(rowProfit, monthCols[m]));
-
-  if (profitChart) profitChart.destroy();
-  const ctx = document.getElementById('profit-chart').getContext('2d');
-  profitChart = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: chartMonths,
-      datasets: [
-        { label: '總業績', data: revenueData, backgroundColor: 'rgba(107,63,160,0.15)', borderColor: '#6B3FA0', borderWidth: 2, borderRadius: 6, order: 2 },
-        { label: '淨利', data: profitData, type: 'line', borderColor: '#10B981', backgroundColor: 'rgba(16,185,129,0.1)', borderWidth: 2.5, pointRadius: 4, pointBackgroundColor: '#10B981', fill: true, tension: 0.3, order: 1 }
-      ]
-    },
-    options: {
-      responsive: true,
-      plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': RM ' + ctx.parsed.y.toLocaleString() } } },
-      scales: { y: { ticks: { callback: v => 'RM ' + v.toLocaleString() } } }
-    }
-  });
-
-  // Table
-  const keyRows = [
-    '總業績','廣告總花費','廣告總業績','FB花費','FB廣告ROAS','Google 花費','Google 廣告ROAS',
-    '開團業績','開團抽成（含保底費）','官網自然業績','Tiktok Shop',
-    '出貨商品總成本','淨利','淨利%','成交訂單（不含退貨，取消訂單）','真實訂單'
-  ];
-
-  const activeCols = months.filter(m => monthCols[m] !== undefined);
-  
-  let tableHtml = '<thead><tr style="background:#F3EFFE"><th style="padding:8px 12px;text-align:left;font-size:12px;color:#6B3FA0">項目</th>';
-  activeCols.forEach(m => { tableHtml += `<th style="padding:8px 12px;text-align:right;font-size:12px;color:#6B3FA0">${m}</th>`; });
-  if (totalCol !== -1) tableHtml += '<th style="padding:8px 12px;text-align:right;font-size:12px;color:#6B3FA0">總額</th>';
-  tableHtml += '</tr></thead><tbody>';
-
-  data.slice(2).forEach((row, i) => {
-    const label = (row[0]||row[1]||'').toString().trim();
-    if (!label || label === '合計') return;
-    const bg = i % 2 === 0 ? '' : 'background:#FAFAFA';
-    const isBold = label === '淨利' || label === '總業績';
-    tableHtml += `<tr style="${bg}"><td style="padding:8px 12px;font-size:12px;${isBold?'font-weight:700':''}">${label}</td>`;
-    activeCols.forEach(m => {
-      const v = row[monthCols[m]];
-      const display = v === '' || v === undefined || v === null ? '—' : (typeof v === 'number' ? (label.includes('%') || label.includes('ROAS') ? v : 'RM ' + v.toLocaleString()) : v);
-      tableHtml += `<td style="padding:8px 12px;text-align:right;font-size:12px;${isBold?'font-weight:700;color:#6B3FA0':''}">${display}</td>`;
-    });
-    if (totalCol !== -1) {
-      const tv = row[totalCol];
-      const tdisplay = tv === '' || tv === undefined || tv === null ? '—' : (typeof tv === 'number' ? (label.includes('%') || label.includes('ROAS') ? tv : 'RM ' + tv.toLocaleString()) : tv);
-      tableHtml += `<td style="padding:8px 12px;text-align:right;font-size:12px;font-weight:600;${isBold?'color:#6B3FA0':''}">${tdisplay}</td>`;
-    }
-    tableHtml += '</tr>';
-  });
-
-  tableHtml += '</tbody>';
-  document.getElementById('profit-table').innerHTML = tableHtml;
-  document.getElementById('profit-loading').style.display = 'none';
-  document.getElementById('profit-content').style.display = 'block';
-}
-
-</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -584,11 +443,15 @@ function renderProfit(data) {
       <div id="profit-loading" style="text-align:center;padding:60px;color:#6B7280">載入中…</div>
       <div id="profit-content" style="display:none">
         <div class="stats-row" id="profit-stats"></div>
+        <div id="profit-kpi-section"></div>
         <div style="background:white;border-radius:14px;border:1px solid #E5E7EB;padding:20px;margin-bottom:20px">
           <canvas id="profit-chart" height="80"></canvas>
         </div>
-        <div style="background:white;border-radius:14px;border:1px solid #E5E7EB;padding:20px;overflow-x:auto">
-          <table id="profit-table" style="width:100%;border-collapse:collapse;font-size:13px"></table>
+        <div style="background:white;border-radius:14px;border:1px solid #E5E7EB;padding:20px;margin-bottom:20px">
+          <div id="profit-table-section"></div>
+        </div>
+        <div style="background:white;border-radius:14px;border:1px solid #E5E7EB;padding:20px;margin-bottom:20px">
+          <div id="profit-product-section"></div>
         </div>
       </div>
       <div id="profit-error" style="display:none;text-align:center;padding:60px;color:#EF4444"></div>
@@ -1521,141 +1384,244 @@ function showToast(msg, type = '') {
 // ===================== PROFIT =====================
 const PROFIT_URL = 'https://script.google.com/macros/s/AKfycbxtH2BJVdpjB7owh9GkL-bVCJ5Bk0iRWsGQGXThUX3jN5NWzKYRGAZr4DLcOL99Ux5sEg/exec';
 let profitChart = null;
+let profitRawData = null;
 let profitLoaded = false;
 
+const MONTHS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+const PROFIT_ROWS = ['總業績','廣告總花費','廣告總業績','FB花費','FB廣告ROAS','Google 花費','Google 廣告ROAS','開團業績','開團抽成（含保底費）','官網自然業績','Tiktok Shop','出貨商品總成本','淨利','淨利%','成交訂單（不含退貨，取消訂單）','真實訂單','訂單差'];
+const SPLIT_ROW = 'SATU ONE 无线直发梳';
+
+// KPI stored in localStorage
+function loadKPI() {
+  try { return JSON.parse(localStorage.getItem('profit_kpi') || '{}'); } catch(e) { return {}; }
+}
+function saveKPI(kpi) { localStorage.setItem('profit_kpi', JSON.stringify(kpi)); }
+
 function loadProfit() {
-  if (profitLoaded) return;
+  if (profitLoaded && profitRawData) { renderProfit(profitRawData); return; }
   document.getElementById('profit-loading').style.display = 'block';
   document.getElementById('profit-content').style.display = 'none';
   document.getElementById('profit-error').style.display = 'none';
-
   const cb = 'cb_' + Date.now();
   const script = document.createElement('script');
   window[cb] = function(json) {
-    delete window[cb];
-    script.remove();
+    delete window[cb]; script.remove();
     if (!json.success) {
       document.getElementById('profit-loading').style.display = 'none';
       document.getElementById('profit-error').style.display = 'block';
       document.getElementById('profit-error').textContent = '載入失敗：' + json.error;
       return;
     }
-    renderProfit(json.data);
+    profitRawData = json.data;
     profitLoaded = true;
+    renderProfit(json.data);
   };
   script.src = PROFIT_URL + '?callback=' + cb;
   document.body.appendChild(script);
 }
 
-function renderProfit(data) {
-  // data is array of rows, first row is headers [""," ","1月","2月",...,"12月","總額"]
-  // second row is ["","金額","金額",...]
-  // rows from index 2 onward are data rows
+function getMonthCols(headerRow) {
+  const cols = {};
+  MONTHS.forEach(m => { const i = headerRow.indexOf(m); if (i !== -1) cols[m] = i; });
+  return cols;
+}
 
-  const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
-  
-  // Find column indices for each month
+function getNum(row, col) {
+  if (!row || col === undefined) return 0;
+  const v = row[col];
+  if (!v && v !== 0) return 0;
+  if (typeof v === 'number') return v;
+  return parseFloat(v.toString().replace(/[^0-9.-]/g,'')) || 0;
+}
+
+function fmtRM(n) { return 'RM ' + n.toLocaleString('en-MY', {minimumFractionDigits:0, maximumFractionDigits:0}); }
+
+function renderProfit(data) {
   const headerRow = data[0];
-  const monthCols = {};
-  months.forEach(m => {
-    const idx = headerRow.indexOf(m);
-    if (idx !== -1) monthCols[m] = idx;
-  });
+  const monthCols = getMonthCols(headerRow);
+  const activeMths = MONTHS.filter(m => monthCols[m] !== undefined);
   const totalCol = headerRow.indexOf('總額');
 
+  // Split data into profit rows and product rows
+  let splitIdx = data.findIndex(r => (r[0]||r[1]||'').toString().includes('SATU ONE'));
+  if (splitIdx === -1) splitIdx = data.length;
+  const profitData = data.slice(2, splitIdx);
+  const productData = data.slice(splitIdx).filter(r => (r[0]||r[1]||'').toString().trim() && (r[0]||r[1]||'').toString().trim() !== '合計');
+
   // Find key rows
-  function findRow(label) {
-    return data.find(r => (r[0]||'').toString().trim() === label || (r[1]||'').toString().trim() === label);
-  }
-
-  const rowRevenue   = findRow('總業績');
-  const rowAdTotal   = findRow('廣告總花費');
-  const rowProfit    = findRow('淨利');
+  function findRow(label) { return data.find(r => (r[0]||r[1]||'').toString().trim() === label); }
+  const rowRevenue = findRow('總業績');
+  const rowProfit  = findRow('淨利');
   const rowProfitPct = findRow('淨利%');
-  const rowOrders    = findRow('成交訂單（不含退貨，取消訂單）');
 
-  function getVal(row, col) {
-    if (!row || col === undefined) return 0;
-    const v = row[col];
-    if (!v && v !== 0) return 0;
-    if (typeof v === 'number') return v;
-    return parseFloat(v.toString().replace(/[^0-9.-]/g, '')) || 0;
-  }
+  // Calculate totals by summing active months
+  const totalRevenue = activeMths.reduce((s,m) => s + getNum(rowRevenue, monthCols[m]), 0);
+  const totalProfit  = activeMths.reduce((s,m) => s + getNum(rowProfit, monthCols[m]), 0);
+  const pctVals = activeMths.map(m => getNum(rowProfitPct, monthCols[m])).filter(v=>v>0);
+  const avgPct = pctVals.length ? (pctVals.reduce((a,b)=>a+b,0)/pctVals.length) : 0;
 
-  // Stats cards - use total column
-  const totalRevenue = getVal(rowRevenue, totalCol);
-  const totalProfit  = getVal(rowProfit, totalCol);
-  const avgProfitPct = rowProfitPct ? (() => {
-    const vals = months.map(m => monthCols[m]).filter(c=>c!==undefined).map(c => getVal(rowProfitPct, c)).filter(v=>v>0);
-    return vals.length ? (vals.reduce((a,b)=>a+b,0)/vals.length) : 0;
-  })() : 0;
+  const kpi = loadKPI();
+  const annualKPI = kpi.annual || 0;
+  const annualProgress = annualKPI > 0 ? Math.min(100, Math.round(totalRevenue/annualKPI*100)) : 0;
 
+  // Stats
   document.getElementById('profit-stats').innerHTML = `
-    <div class="stat-card total"><div class="stat-num">RM ${totalRevenue.toLocaleString('en-MY', {minimumFractionDigits:0, maximumFractionDigits:0})}</div><div class="stat-label">年度總業績</div></div>
-    <div class="stat-card arrived"><div class="stat-num">RM ${totalProfit.toLocaleString('en-MY', {minimumFractionDigits:0, maximumFractionDigits:0})}</div><div class="stat-label">年度淨利</div></div>
-    <div class="stat-card pending"><div class="stat-num">${avgProfitPct.toFixed(1)}%</div><div class="stat-label">平均淨利率</div></div>
+    <div class="stat-card total"><div class="stat-num">${fmtRM(totalRevenue)}</div><div class="stat-label">年度總業績${annualKPI ? ' / 目標 ' + fmtRM(annualKPI) : ''}</div>${annualKPI ? `<div style="margin-top:6px;background:#E5E7EB;border-radius:4px;height:6px"><div style="background:#6B3FA0;border-radius:4px;height:6px;width:${annualProgress}%"></div></div>` : ''}</div>
+    <div class="stat-card arrived"><div class="stat-num">${fmtRM(totalProfit)}</div><div class="stat-label">年度淨利</div></div>
+    <div class="stat-card pending"><div class="stat-num">${avgPct.toFixed(1)}%</div><div class="stat-label">平均淨利率</div></div>
   `;
 
   // Chart
-  const chartMonths = months.filter(m => monthCols[m] !== undefined && getVal(rowRevenue, monthCols[m]) > 0);
-  const revenueData = chartMonths.map(m => getVal(rowRevenue, monthCols[m]));
-  const profitData  = chartMonths.map(m => getVal(rowProfit, monthCols[m]));
+  const revenueData = activeMths.map(m => getNum(rowRevenue, monthCols[m]));
+  const profitDataArr = activeMths.map(m => getNum(rowProfit, monthCols[m]));
+  const kpiLine = activeMths.map(m => kpi[m] || null);
+  const hasKPI = kpiLine.some(v => v !== null);
 
   if (profitChart) profitChart.destroy();
   const ctx = document.getElementById('profit-chart').getContext('2d');
+  const datasets = [
+    { label: '總業績', data: revenueData, backgroundColor: 'rgba(107,63,160,0.15)', borderColor: '#6B3FA0', borderWidth: 2, borderRadius: 6, type: 'bar', order: 3 },
+    { label: '淨利', data: profitDataArr, type: 'line', borderColor: '#10B981', backgroundColor: 'rgba(16,185,129,0.08)', borderWidth: 2.5, pointRadius: 4, pointBackgroundColor: '#10B981', fill: true, tension: 0.3, order: 1 }
+  ];
+  if (hasKPI) {
+    datasets.push({ label: '月度目標', data: kpiLine, type: 'line', borderColor: '#F59E0B', borderWidth: 2, borderDash: [6,4], pointRadius: 3, pointBackgroundColor: '#F59E0B', fill: false, tension: 0, order: 2 });
+  }
   profitChart = new Chart(ctx, {
     type: 'bar',
-    data: {
-      labels: chartMonths,
-      datasets: [
-        { label: '總業績', data: revenueData, backgroundColor: 'rgba(107,63,160,0.15)', borderColor: '#6B3FA0', borderWidth: 2, borderRadius: 6, order: 2 },
-        { label: '淨利', data: profitData, type: 'line', borderColor: '#10B981', backgroundColor: 'rgba(16,185,129,0.1)', borderWidth: 2.5, pointRadius: 4, pointBackgroundColor: '#10B981', fill: true, tension: 0.3, order: 1 }
-      ]
-    },
+    data: { labels: activeMths, datasets },
     options: {
       responsive: true,
-      plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': RM ' + ctx.parsed.y.toLocaleString() } } },
+      plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: c => c.dataset.label + ': ' + (c.dataset.label.includes('%') ? c.parsed.y + '%' : fmtRM(c.parsed.y)) } } },
       scales: { y: { ticks: { callback: v => 'RM ' + v.toLocaleString() } } }
     }
   });
 
-  // Table
-  const keyRows = [
-    '總業績','廣告總花費','廣告總業績','FB花費','FB廣告ROAS','Google 花費','Google 廣告ROAS',
-    '開團業績','開團抽成（含保底費）','官網自然業績','Tiktok Shop',
-    '出貨商品總成本','淨利','淨利%','成交訂單（不含退貨，取消訂單）','真實訂單'
-  ];
-
-  const activeCols = months.filter(m => monthCols[m] !== undefined);
-  
-  let tableHtml = '<thead><tr style="background:#F3EFFE"><th style="padding:8px 12px;text-align:left;font-size:12px;color:#6B3FA0">項目</th>';
-  activeCols.forEach(m => { tableHtml += `<th style="padding:8px 12px;text-align:right;font-size:12px;color:#6B3FA0">${m}</th>`; });
-  if (totalCol !== -1) tableHtml += '<th style="padding:8px 12px;text-align:right;font-size:12px;color:#6B3FA0">總額</th>';
-  tableHtml += '</tr></thead><tbody>';
-
-  data.slice(2).forEach((row, i) => {
-    const label = (row[0]||row[1]||'').toString().trim();
-    if (!label || label === '合計') return;
-    const bg = i % 2 === 0 ? '' : 'background:#FAFAFA';
-    const isBold = label === '淨利' || label === '總業績';
-    tableHtml += `<tr style="${bg}"><td style="padding:8px 12px;font-size:12px;${isBold?'font-weight:700':''}">${label}</td>`;
-    activeCols.forEach(m => {
-      const v = row[monthCols[m]];
-      const display = v === '' || v === undefined || v === null ? '—' : (typeof v === 'number' ? (label.includes('%') || label.includes('ROAS') ? v : 'RM ' + v.toLocaleString()) : v);
-      tableHtml += `<td style="padding:8px 12px;text-align:right;font-size:12px;${isBold?'font-weight:700;color:#6B3FA0':''}">${display}</td>`;
-    });
-    if (totalCol !== -1) {
-      const tv = row[totalCol];
-      const tdisplay = tv === '' || tv === undefined || tv === null ? '—' : (typeof tv === 'number' ? (label.includes('%') || label.includes('ROAS') ? tv : 'RM ' + tv.toLocaleString()) : tv);
-      tableHtml += `<td style="padding:8px 12px;text-align:right;font-size:12px;font-weight:600;${isBold?'color:#6B3FA0':''}">${tdisplay}</td>`;
-    }
-    tableHtml += '</tr>';
+  // KPI settings section
+  let kpiHtml = `<div style="background:white;border-radius:14px;border:1px solid #E5E7EB;padding:20px;margin-bottom:20px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3 style="font-size:14px;font-weight:700;color:#1A1225">🎯 KPI 目標設定</h3>
+      <button onclick="saveKPIForm()" class="btn btn-primary" style="font-size:12px;padding:6px 14px">儲存</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">
+      <div><div style="font-size:11px;color:#6B7280;margin-bottom:4px">年度目標業績</div>
+        <input id="kpi-annual" type="text" value="${annualKPI||''}" placeholder="例：500000" style="width:100%;padding:7px 10px;border:1.5px solid #E5E7EB;border-radius:8px;font-size:13px;outline:none">
+      </div>`;
+  activeMths.forEach(m => {
+    kpiHtml += `<div><div style="font-size:11px;color:#6B7280;margin-bottom:4px">${m} 目標</div>
+      <input id="kpi-${m}" type="text" value="${kpi[m]||''}" placeholder="RM" style="width:100%;padding:7px 10px;border:1.5px solid #E5E7EB;border-radius:8px;font-size:13px;outline:none">
+    </div>`;
   });
+  kpiHtml += `</div></div>`;
+  document.getElementById('profit-kpi-section').innerHTML = kpiHtml;
 
-  tableHtml += '</tbody>';
-  document.getElementById('profit-table').innerHTML = tableHtml;
+  // Profit table
+  renderProfitTable(profitData, activeMths, monthCols, totalCol);
+
+  // Product table
+  renderProductTable(productData, activeMths, monthCols);
+
   document.getElementById('profit-loading').style.display = 'none';
   document.getElementById('profit-content').style.display = 'block';
+}
+
+function saveKPIForm() {
+  const kpi = {};
+  const annualEl = document.getElementById('kpi-annual');
+  if (annualEl) kpi.annual = parseFloat(annualEl.value.replace(/[^0-9.]/g,'')) || 0;
+  MONTHS.forEach(m => {
+    const el = document.getElementById('kpi-' + m);
+    if (el && el.value) kpi[m] = parseFloat(el.value.replace(/[^0-9.]/g,'')) || 0;
+  });
+  saveKPI(kpi);
+  profitLoaded = false;
+  renderProfit(profitRawData);
+  showToast('✅ KPI 已儲存');
+}
+
+function renderProfitTable(rows, activeMths, monthCols, totalCol) {
+  let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <h3 style="font-size:14px;font-weight:700">📊 利潤明細</h3>
+  </div>
+  <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+  <thead><tr style="background:#F3EFFE">
+    <th style="padding:8px 12px;text-align:left;color:#6B3FA0;white-space:nowrap">項目</th>`;
+  activeMths.forEach(m => { html += `<th style="padding:8px 12px;text-align:right;color:#6B3FA0">${m}</th>`; });
+  if (totalCol !== -1) html += `<th style="padding:8px 12px;text-align:right;color:#6B3FA0">合計</th>`;
+  html += `</tr></thead><tbody>`;
+
+  rows.forEach((row, i) => {
+    const label = (row[0]||row[1]||'').toString().trim();
+    if (!label) return;
+    const isBold = label === '淨利' || label === '總業績' || label === '淨利%';
+    const bg = i % 2 === 0 ? '' : 'background:#FAFAFA';
+    html += `<tr style="${bg}"><td style="padding:8px 12px;white-space:nowrap;${isBold?'font-weight:700':''}">${label}</td>`;
+    
+    // Calculate row total from active months
+    let rowTotal = 0;
+    let hasNums = false;
+    activeMths.forEach(m => {
+      const col = monthCols[m];
+      const v = row[col];
+      const isNum = typeof v === 'number';
+      const isPct = label.includes('%') || label.includes('ROAS');
+      let display = '—';
+      if (v !== '' && v !== undefined && v !== null) {
+        display = isNum ? (isPct ? v.toFixed(1) + (label.includes('%') ? '%' : '') : fmtRM(v)) : v.toString();
+        if (isNum && !isPct) { rowTotal += v; hasNums = true; }
+      }
+      const rowId = `pt_${label.replace(/[^a-zA-Z0-9]/g,'_')}_${m}`;
+      html += `<td style="padding:4px 12px;text-align:right;${isBold?'font-weight:700;color:#6B3FA0':''}">
+        <input data-row="${label}" data-month="${m}" value="${display === '—' ? '' : display}" placeholder="—"
+          style="width:90px;text-align:right;border:none;border-bottom:1.5px solid transparent;background:transparent;font-size:12px;padding:2px 4px;border-radius:4px;cursor:text;${isBold?'font-weight:700;color:#6B3FA0':''}"
+          onfocus="this.style.borderBottomColor='#6B3FA0'"
+          onblur="this.style.borderBottomColor='transparent'"
+        >
+      </td>`;
+    });
+    
+    if (totalCol !== -1) {
+      const isPct = label.includes('%') || label.includes('ROAS');
+      const tv = hasNums ? rowTotal : (row[totalCol] !== undefined && row[totalCol] !== '' ? row[totalCol] : '—');
+      const tdisplay = typeof tv === 'number' ? (isPct ? tv.toFixed(1)+'%' : fmtRM(tv)) : (tv||'—');
+      html += `<td style="padding:8px 12px;text-align:right;font-weight:600;${isBold?'color:#6B3FA0':''}">${tdisplay}</td>`;
+    }
+    html += `</tr>`;
+  });
+  html += `</tbody></table></div>`;
+  document.getElementById('profit-table-section').innerHTML = html;
+}
+
+function renderProductTable(rows, activeMths, monthCols) {
+  if (!rows.length) { document.getElementById('profit-product-section').innerHTML = ''; return; }
+  
+  // Find top products by total
+  const withTotals = rows.map(row => {
+    const label = (row[0]||row[1]||'').toString().trim();
+    const total = activeMths.reduce((s,m) => s + (typeof row[monthCols[m]] === 'number' ? row[monthCols[m]] : parseFloat((row[monthCols[m]]||'').toString().replace(/[^0-9.-]/g,''))||0), 0);
+    return { label, row, total };
+  }).filter(r => r.label).sort((a,b) => b.total - a.total);
+
+  let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;margin-top:4px">
+    <h3 style="font-size:14px;font-weight:700">📦 產品銷售數量</h3>
+  </div>
+  <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+  <thead><tr style="background:#EAF4EF">
+    <th style="padding:8px 12px;text-align:left;color:#2D6A4F;white-space:nowrap">產品</th>`;
+  activeMths.forEach(m => { html += `<th style="padding:8px 12px;text-align:right;color:#2D6A4F">${m}</th>`; });
+  html += `<th style="padding:8px 12px;text-align:right;color:#2D6A4F">總計</th></tr></thead><tbody>`;
+
+  withTotals.forEach(({ label, row, total }, i) => {
+    const bg = i % 2 === 0 ? '' : 'background:#FAFAFA';
+    html += `<tr style="${bg}"><td style="padding:8px 12px;white-space:nowrap;font-size:11px">${label}</td>`;
+    activeMths.forEach(m => {
+      const v = row[monthCols[m]];
+      const display = (v === '' || v === undefined || v === null) ? '—' : v;
+      html += `<td style="padding:8px 12px;text-align:right">${display}</td>`;
+    });
+    html += `<td style="padding:8px 12px;text-align:right;font-weight:600">${total || '—'}</td></tr>`;
+  });
+  html += `</tbody></table></div>`;
+  document.getElementById('profit-product-section').innerHTML = html;
 }
 
 </script>
