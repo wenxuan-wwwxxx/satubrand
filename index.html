@@ -376,10 +376,13 @@ const db = firebase.firestore();
     <div class="nav-item" onclick="showPage('profit')" id="nav-profit">
       <span class="icon">💰</span> 利潤表
     </div>
-    <div class="nav-section-label">設定</div>
     <div class="nav-item" onclick="showPage('inventory')" id="nav-inventory">
-      <span class="icon">📦</span> 產品資料庫
+      <span class="icon">🗂️</span> 產品資料庫
     </div>
+    <div class="nav-item" onclick="showPage('seeding')" id="nav-seeding">
+      <span class="icon">🌟</span> Seeding
+    </div>
+    <div class="nav-section-label">設定</div>
     <div class="nav-item" onclick="showPage('config')" id="nav-config">
       <span class="icon">⚙️</span> 連接設定
     </div>
@@ -493,6 +496,16 @@ const db = firebase.firestore();
         </div>
       </div>
       <div id="inv-error" style="display:none;text-align:center;padding:60px;color:#EF4444"></div>
+    </div>
+
+    <!-- SEEDING PAGE -->
+    <div class="page" id="page-seeding">
+      <div class="tab-row" style="display:flex;gap:4px;margin-bottom:16px;background:var(--bg-page);padding:4px;border-radius:10px;width:fit-content">
+        <button class="seed-tab active" onclick="switchSeedTab('records',this)" style="padding:6px 16px;border-radius:7px;font-size:13px;cursor:pointer;border:none;background:var(--bg-card);color:#6B3FA0;font-weight:500;border:0.5px solid var(--border)">Seeding 記錄</button>
+        <button class="seed-tab" onclick="switchSeedTab('database',this)" style="padding:6px 16px;border-radius:7px;font-size:13px;cursor:pointer;border:none;background:none;color:var(--text-secondary)">KOL 資料庫</button>
+      </div>
+      <div id="seed-records-view"></div>
+      <div id="seed-database-view" style="display:none"></div>
     </div>
 
     <!-- CONFIG PAGE -->
@@ -825,6 +838,7 @@ function showPage(page) {
     groupbuy: ['團購資料', '記錄和追蹤所有團購活動'],
     profit: ['利潤表', 'Satu 每月營收與利潤分析'],
     inventory: ['產品資料庫', '庫存狀態與成本售價管理'],
+    seeding: ['Seeding 管理', 'KOL / KOC 寄樣記錄與資料庫'],
     config: ['連接設定', '設定資料來源和 API 連線'],
   };
   document.getElementById('page-title').textContent = titles[page][0];
@@ -850,6 +864,7 @@ function renderPage() {
   if (state.page === 'groupbuy') renderGroupbuy();
   if (state.page === 'profit') loadProfit();
   if (state.page === 'inventory') loadInventory();
+  if (state.page === 'seeding') initSeeding();
 }
 
 // ===================== BRAND SWITCH =====================
@@ -872,6 +887,7 @@ function switchBrand(brand) {
 
 // ===================== SYNC =====================
 async function syncData() {
+  state.config.sheetsUrl = state.config.sheetsUrl || 'https://script.google.com/macros/s/AKfycbx31ahFAiRXKcTjEiPvfi98bn4x4tUO3YNUJ5jw4NMNNChYMYOyBKu5LucE5sKmSfP94g/exec';
   const url = state.config.sheetsUrl;
   if (!url) { showToast('請先在設定填入 Sheets API 網址', 'error'); showPage('config'); return; }
 
@@ -902,6 +918,7 @@ async function syncData() {
 
 async function testConnection() {
   saveConfig();
+  state.config.sheetsUrl = state.config.sheetsUrl || 'https://script.google.com/macros/s/AKfycbx31ahFAiRXKcTjEiPvfi98bn4x4tUO3YNUJ5jw4NMNNChYMYOyBKu5LucE5sKmSfP94g/exec';
   const url = state.config.sheetsUrl;
   if (!url) { showToast('請先填入網址', 'error'); return; }
   const dot = document.getElementById('sheets-dot');
@@ -1857,6 +1874,515 @@ function renderInventory(data) {
   }
 }
 
+// ===================== SEEDING =====================
+let seedTab = 'records';
+let seedRecords = [];
+let seedDatabase = [];
+let seedFilterStatus = 'all';
+let seedFilterType = 'all';
+let seedDbFilterRating = 'all';
+let seedProducts = [];
+
+function switchSeedTab(tab, btn) {
+  seedTab = tab;
+  document.querySelectorAll('.seed-tab').forEach(b => {
+    b.style.background = 'none';
+    b.style.color = 'var(--text-secondary)';
+    b.style.fontWeight = '400';
+    b.style.border = 'none';
+  });
+  btn.style.background = 'var(--bg-card)';
+  btn.style.color = '#6B3FA0';
+  btn.style.fontWeight = '500';
+  btn.style.border = '0.5px solid var(--border)';
+  document.getElementById('seed-records-view').style.display = tab === 'records' ? 'block' : 'none';
+  document.getElementById('seed-database-view').style.display = tab === 'database' ? 'block' : 'none';
+}
+
+function initSeeding() {
+  // Load products from inventory for dropdown
+  if (invRawData) {
+    let headerIdx = invRawData.findIndex(r => r.some(c => c.toString().includes('SKU編號')));
+    if (headerIdx === -1) headerIdx = 3;
+    seedProducts = invRawData.slice(headerIdx + 1)
+      .map(r => (r[1]||'').toString().trim())
+      .filter(n => n && n !== '合計');
+  }
+  // Load from Firebase
+  db.collection('seeding_records').orderBy('createdAt', 'desc').onSnapshot(snap => {
+    seedRecords = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderSeedRecords();
+  });
+  db.collection('kol_database').onSnapshot(snap => {
+    seedDatabase = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderSeedDatabase();
+  });
+}
+
+function renderSeedRecords() {
+  const search = (document.getElementById('seed-search')||{value:''}).value.toLowerCase();
+  const filtered = seedRecords.filter(r => {
+    const matchSearch = !search || (r.igName||'').toLowerCase().includes(search) || (r.product||'').toLowerCase().includes(search);
+    const matchStatus = seedFilterStatus === 'all' ||
+      (seedFilterStatus === 'pending' && (!r.igPublished && !r.ttPublished)) ||
+      (seedFilterStatus === 'published' && (r.igPublished || r.ttPublished));
+    const matchType = seedFilterType === 'all' || r.kolType === seedFilterType;
+    return matchSearch && matchStatus && matchType;
+  });
+
+  const total = seedRecords.length;
+  const igDone = seedRecords.filter(r => r.igPublished).length;
+  const ttDone = seedRecords.filter(r => r.ttPublished).length;
+  const pending = seedRecords.filter(r => !r.igPublished && !r.ttPublished).length;
+
+  let html = `
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <div style="font-size:14px;font-weight:700;color:var(--text-primary)">Seeding 記錄 <span style="font-size:12px;color:var(--text-secondary);font-weight:400">${total} 筆</span></div>
+    <button class="btn btn-primary" onclick="openSeedForm(null)" style="font-size:12px;padding:7px 14px">+ 新增 Seeding</button>
+  </div>
+  <div class="stats-row" style="margin-bottom:14px">
+    <div class="stat-card total"><div class="stat-num">${total}</div><div class="stat-label">總記錄</div></div>
+    <div class="stat-card arrived"><div class="stat-num" style="color:#059669">${igDone}</div><div class="stat-label">IG 已發布</div></div>
+    <div class="stat-card ordered"><div class="stat-num" style="color:#059669">${ttDone}</div><div class="stat-label">TT 已發布</div></div>
+    <div class="stat-card pending"><div class="stat-num" style="color:#D97706">${pending}</div><div class="stat-label">待發布</div></div>
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+    <input id="seed-search" type="text" placeholder="搜尋 IG 名字或產品…" oninput="renderSeedRecords()"
+      style="flex:1;min-width:150px;padding:7px 12px;border:0.5px solid var(--border);border-radius:8px;font-size:13px;outline:none;background:var(--bg-card);color:var(--text-primary)">
+    <button class="btn btn-outline seed-status-btn ${seedFilterStatus==='all'?'active':''}" onclick="seedFilterStatus='all';renderSeedRecords()">全部</button>
+    <button class="btn btn-outline seed-status-btn ${seedFilterStatus==='pending'?'active':''}" onclick="seedFilterStatus='pending';renderSeedRecords()">待發布</button>
+    <button class="btn btn-outline seed-status-btn ${seedFilterStatus==='published'?'active':''}" onclick="seedFilterStatus='published';renderSeedRecords()">已發布</button>
+    <button class="btn btn-outline seed-type-btn ${seedFilterType==='all'?'active':''}" onclick="seedFilterType='all';renderSeedRecords()">KOL+KOC</button>
+    <button class="btn btn-outline seed-type-btn ${seedFilterType==='KOL'?'active':''}" onclick="seedFilterType='KOL';renderSeedRecords()">KOL</button>
+    <button class="btn btn-outline seed-type-btn ${seedFilterType==='KOC'?'active':''}" onclick="seedFilterType='KOC';renderSeedRecords()">KOC</button>
+    <select onchange="seedFilterMonth=this.value;renderSeedRecords()" style="padding:6px 10px;border:0.5px solid var(--border);border-radius:8px;font-size:12px;background:var(--bg-card);color:var(--text-secondary)">
+      <option value="">全部月份</option>
+      ${getMonthOptions(seedRecords)}
+    </select>
+  </div>`;
+
+  if (!filtered.length) {
+    html += `<div class="empty-state"><div class="icon">🌟</div><h3>還沒有 Seeding 記錄</h3><p>點擊「新增 Seeding」開始記錄。</p></div>`;
+  } else {
+    filtered.forEach(r => { html += buildSeedCard(r); });
+  }
+
+  document.getElementById('seed-records-view').innerHTML = html;
+}
+
+function getMonthOptions(records) {
+  const months = new Set();
+  records.forEach(r => {
+    if (r.shipDate) {
+      const d = new Date(r.shipDate);
+      if (!isNaN(d)) months.add(d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'));
+    }
+  });
+  return [...months].sort().reverse().map(m => `<option value="${m}">${m.replace('-','年 ')}月</option>`).join('');
+}
+
+function buildSeedCard(r) {
+  const daysSince = r.shipDate ? Math.floor((new Date() - new Date(r.shipDate)) / 86400000) : null;
+  const daysColor = daysSince > 14 ? '#DC2626' : daysSince > 7 ? '#D97706' : '#059669';
+  const daysBg = daysSince > 14 ? 'background:#FEE2E2;color:#991B1B' : daysSince > 7 ? 'background:#FEF3C7;color:#92400E' : 'background:#D1FAE5;color:#065F46';
+  const typeBadge = r.kolType === 'KOL'
+    ? `<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;background:#F3EFFE;color:#6B3FA0">KOL</span>`
+    : `<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;background:#E1F5EE;color:#0F6E56">KOC</span>`;
+  const paidBadge = r.isPaid
+    ? `<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;background:#FEF3C7;color:#92400E">付費${r.paidAmount?' RM '+r.paidAmount:''}</span>`
+    : `<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;background:#F3F4F6;color:#6B7280">免費</span>`;
+  const initials = (r.igName||'?').replace('@','').slice(0,2).toUpperCase();
+  const igStyle = r.igPublished
+    ? 'background:#D1FAE5;border-color:#22C55E;color:#065F46'
+    : 'background:#FEF9C3;border-color:#FCD34D;color:#92400E';
+  const ttStyle = r.ttPublished
+    ? 'background:#D1FAE5;border-color:#22C55E;color:#065F46'
+    : 'background:#F3F4F6;border-color:#D1D5DB;color:#6B7280';
+  const igText = r.igPublished ? '📸 IG 已發布' : '📸 IG 待發布';
+  const ttText = r.ttPublished ? '🎵 TT 已發布' : '🎵 TT 待發布';
+
+  return `<div class="proc-card" style="margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+      <div style="display:flex;gap:10px;align-items:center">
+        <div style="width:38px;height:38px;border-radius:50%;background:#F3EFFE;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;color:#6B3FA0;flex-shrink:0">${initials}</div>
+        <div>
+          <div style="font-size:14px;font-weight:700">${r.igName||'—'}</div>
+          <div style="font-size:12px;color:var(--text-secondary)">${r.followers ? r.followers.toLocaleString() + ' followers' : '—'}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:5px;align-items:center">${typeBadge} ${paidBadge}</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px 12px;margin-bottom:12px">
+      <div style="grid-column:1/-1"><div class="proc-card-label">產品</div><div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:2px">${(r.products&&r.products.length?r.products:[r.product||'—']).map(p=>`<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;background:#F3EFFE;color:#6B3FA0">${p}</span>`).join('')}</div></div>
+      <div><div class="proc-card-label">寄出日期</div><div style="font-size:12px">${r.shipDate||'—'}</div></div>
+      <div><div class="proc-card-label">已寄出</div><div style="font-size:12px"><span style="padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;${daysBg}">${daysSince !== null ? daysSince + ' 天' : '—'}</span></div></div>
+      <div><div class="proc-card-label">折扣碼</div><div style="font-size:12px;color:#6B3FA0;font-family:monospace">${r.discountCode||'—'}</div></div>
+      <div><div class="proc-card-label">手機</div><div style="font-size:12px">${r.phone||'—'}</div></div>
+      <div><div class="proc-card-label">提供素材</div><div style="font-size:12px">${r.hasMaterial?'是':'否'}</div></div>
+      <div style="grid-column:span 2"><div class="proc-card-label">地址</div><div style="font-size:12px">${r.address||'—'}</div></div>
+      ${r.notes ? `<div style="grid-column:1/-1"><div class="proc-card-label">備註</div><div style="font-size:12px">${r.notes}</div></div>` : ''}
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding-top:10px;border-top:0.5px solid var(--border)">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+        <button onclick="toggleSeedPublish('${r.id}','ig')" style="display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;border:1.5px solid;transition:all 0.15s;${igStyle}">${igText}</button>
+        ${r.igPublishDate?`<span style="font-size:11px;color:var(--text-secondary)">${r.igPublishDate}</span>`:''}
+        ${r.igLink?`<a href="${r.igLink}" target="_blank" style="font-size:11px;color:#6B3FA0;text-decoration:none">IG 連結 →</a>`:''}
+        <button onclick="toggleSeedPublish('${r.id}','tt')" style="display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;border:1.5px solid;transition:all 0.15s;${ttStyle}">${ttText}</button>
+        ${r.ttPublishDate?`<span style="font-size:11px;color:var(--text-secondary)">${r.ttPublishDate}</span>`:''}
+        ${r.ttLink?`<a href="${r.ttLink}" target="_blank" style="font-size:11px;color:#6B3FA0;text-decoration:none">TT 連結 →</a>`:''}
+      </div>
+      <div style="display:flex;gap:6px">
+        <button onclick="addToKolDB('${r.id}')" style="font-size:11px;padding:4px 10px;border:0.5px solid var(--border);border-radius:6px;background:none;color:var(--text-secondary);cursor:pointer">加入資料庫</button>
+        <button onclick="openSeedForm('${r.id}')" style="font-size:12px;border:none;background:none;color:var(--text-secondary);cursor:pointer">✏️</button>
+        <button onclick="deleteSeedRecord('${r.id}')" style="font-size:12px;border:none;background:none;color:#EF4444;cursor:pointer">🗑️</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderSeedDatabase() {
+  const search = (document.getElementById('seed-db-search')||{value:''}).value.toLowerCase();
+  const filtered = seedDatabase.filter(r => {
+    const matchSearch = !search || (r.igName||'').toLowerCase().includes(search);
+    const matchRating = seedDbFilterRating === 'all' || r.rating === seedDbFilterRating;
+    return matchSearch && matchRating;
+  });
+
+  let html = `
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <div style="font-size:14px;font-weight:700;color:var(--text-primary)">KOL 資料庫 <span style="font-size:12px;color:var(--text-secondary);font-weight:400">${seedDatabase.length} 位</span></div>
+    <button class="btn btn-primary" onclick="openKolDBForm(null)" style="font-size:12px;padding:7px 14px">+ 手動新增</button>
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+    <input id="seed-db-search" type="text" placeholder="搜尋 KOL…" oninput="renderSeedDatabase()"
+      style="flex:1;min-width:150px;padding:7px 12px;border:0.5px solid var(--border);border-radius:8px;font-size:13px;outline:none;background:var(--bg-card);color:var(--text-primary)">
+    <button class="btn btn-outline ${seedDbFilterRating==='all'?'active':''}" onclick="seedDbFilterRating='all';renderSeedDatabase()">全部</button>
+    <button class="btn btn-outline ${seedDbFilterRating==='推薦再合作'?'active':''}" onclick="seedDbFilterRating='推薦再合作';renderSeedDatabase()">推薦再合作</button>
+    <button class="btn btn-outline ${seedDbFilterRating==='不再合作'?'active':''}" onclick="seedDbFilterRating='不再合作';renderSeedDatabase()">不再合作</button>
+  </div>`;
+
+  if (!filtered.length) {
+    html += `<div class="empty-state"><div class="icon">🌟</div><h3>KOL 資料庫是空的</h3><p>從 Seeding 記錄點「加入資料庫」或手動新增。</p></div>`;
+  } else {
+    filtered.forEach(r => {
+      const ratingStyle = r.rating === '推薦再合作' ? 'background:#D1FAE5;color:#065F46' : r.rating === '不再合作' ? 'background:#FEE2E2;color:#991B1B' : 'background:#FEF3C7;color:#92400E';
+      const initials = (r.igName||'?').replace('@','').slice(0,2).toUpperCase();
+      const avatarBg = r.rating === '不再合作' ? 'background:#FEE2E2;color:#991B1B' : 'background:#F3EFFE;color:#6B3FA0';
+      html += `<div class="proc-card" style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+          <div style="display:flex;gap:10px;align-items:center">
+            <div style="width:38px;height:38px;border-radius:50%;${avatarBg};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;flex-shrink:0">${initials}</div>
+            <div>
+              <div style="font-size:14px;font-weight:700">${r.igName||'—'}</div>
+              <div style="font-size:12px;color:var(--text-secondary)">${r.followers?r.followers.toLocaleString()+' followers':'—'} ・ ${r.kolType||'—'}</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <span style="display:inline-block;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:500;${ratingStyle}">${r.rating||'—'}</span>
+            <button onclick="openKolDBForm('${r.id}')" style="font-size:12px;border:none;background:none;color:var(--text-secondary);cursor:pointer">✏️</button>
+            <button onclick="deleteKolDB('${r.id}')" style="font-size:12px;border:none;background:none;color:#EF4444;cursor:pointer">🗑️</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px 12px;margin-bottom:10px">
+          <div><div class="proc-card-label">手機</div><div style="font-size:12px">${r.phone||'—'}</div></div>
+          <div><div class="proc-card-label">折扣碼</div><div style="font-size:12px;color:#6B3FA0;font-family:monospace">${r.discountCode||'—'}</div></div>
+          <div><div class="proc-card-label">合作次數</div><div style="font-size:12px">${r.collabCount||0} 次</div></div>
+        </div>
+        ${r.products && r.products.length ? `<div style="margin-bottom:10px"><div class="proc-card-label" style="margin-bottom:4px">合作過的產品</div>${r.products.map(p=>`<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;background:var(--bg-page);color:var(--text-secondary);margin-right:4px;margin-top:4px">${p}</span>`).join('')}</div>` : ''}
+        ${r.notes ? `<div style="padding-top:10px;border-top:0.5px solid var(--border)"><div class="proc-card-label" style="margin-bottom:3px">備註</div><div style="font-size:12px">${r.notes}</div></div>` : ''}
+      </div>`;
+    });
+  }
+
+  document.getElementById('seed-database-view').innerHTML = html;
+}
+
+function closeSeedModal() {
+  document.getElementById('seed-modal').classList.remove('show');
+}
+
+function openSeedForm(id) {
+  const r = id ? seedRecords.find(x => x.id === id) : {};
+  const modal = document.getElementById('seed-modal');
+  modal.classList.add('show');
+  document.getElementById('seed-modal-title').textContent = id ? '編輯 Seeding' : '新增 Seeding';
+
+  const selectedProducts = (r && r.products) ? r.products : [];
+
+  document.getElementById('seed-modal-body').innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:0">
+
+      <!-- 基本資料 -->
+      <div style="padding:0 0 16px;margin-bottom:16px;border-bottom:0.5px solid var(--border)">
+        <div style="font-size:11px;font-weight:600;color:#6B3FA0;letter-spacing:0.5px;margin-bottom:12px">基本資料</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div><label class="proc-card-label">IG 名字</label><input id="sf-ig" type="text" value="${r&&r.igName||''}" placeholder="@username" class="seed-input"></div>
+          <div><label class="proc-card-label">粉絲數</label><input id="sf-followers" type="number" value="${r&&r.followers||''}" placeholder="例：50000" class="seed-input"></div>
+          <div><label class="proc-card-label">KOL / KOC 類型</label><select id="sf-type" class="seed-input"><option ${r&&r.kolType==='KOL'?'selected':''}>KOL</option><option ${r&&r.kolType==='KOC'?'selected':''}>KOC</option></select></div>
+          <div><label class="proc-card-label">手機號碼</label><input id="sf-phone" type="text" value="${r&&r.phone||''}" placeholder="+60 12-345 6789" class="seed-input"></div>
+          <div style="grid-column:1/-1"><label class="proc-card-label">地址</label><input id="sf-addr" type="text" value="${r&&r.address||''}" placeholder="完整寄送地址" class="seed-input"></div>
+        </div>
+      </div>
+
+      <!-- 寄送產品 -->
+      <div style="padding:0 0 16px;margin-bottom:16px;border-bottom:0.5px solid var(--border)">
+        <div style="font-size:11px;font-weight:600;color:#6B3FA0;letter-spacing:0.5px;margin-bottom:12px">寄送產品</div>
+        <div style="margin-bottom:10px">
+          <label class="proc-card-label">產品（可複選）</label>
+          <div id="sf-product-wrap" style="margin-top:4px;border:0.5px solid var(--border);border-radius:8px;padding:8px 10px;min-height:42px;position:relative;background:var(--bg-card)">
+            <div id="sf-product-tags" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:4px"></div>
+            <button type="button" onclick="toggleSeedProductDropdown()" style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border:0.5px dashed var(--border);border-radius:20px;font-size:12px;color:var(--text-secondary);cursor:pointer;background:none">+ 新增產品</button>
+            <div id="sf-product-dropdown" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--bg-card);border:0.5px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.12);z-index:200;overflow:hidden">
+              <div style="padding:8px 10px;border-bottom:0.5px solid var(--border)">
+                <input type="text" placeholder="搜尋產品…" oninput="filterSeedProducts(this.value)" id="sf-prod-search" style="width:100%;border:none;outline:none;font-size:13px;background:transparent;color:var(--text-primary)">
+              </div>
+              <div id="sf-prod-list" style="max-height:160px;overflow-y:auto"></div>
+              <div style="padding:8px 12px;border-top:0.5px solid var(--border);display:flex;justify-content:flex-end">
+                <button onclick="toggleSeedProductDropdown()" style="padding:4px 14px;border:none;background:#6B3FA0;color:white;border-radius:6px;font-size:12px;cursor:pointer">完成</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div><label class="proc-card-label">寄出日期</label><input id="sf-ship" type="date" value="${r&&r.shipDate||''}" class="seed-input"></div>
+          <div><label class="proc-card-label">是否付費</label><select id="sf-paid" class="seed-input"><option value="0" ${r&&!r.isPaid?'selected':''}>免費</option><option value="1" ${r&&r.isPaid?'selected':''}>付費</option></select></div>
+          <div><label class="proc-card-label">付費金額 (RM)（選填）</label><input id="sf-paidamt" type="text" value="${r&&r.paidAmount||''}" placeholder="—" class="seed-input"></div>
+          <div><label class="proc-card-label">折扣碼（選填）</label><input id="sf-code" type="text" value="${r&&r.discountCode||''}" placeholder="例：JESSICA10" class="seed-input"></div>
+          <div><label class="proc-card-label">提供素材</label><select id="sf-material" class="seed-input"><option value="0" ${r&&!r.hasMaterial?'selected':''}>否</option><option value="1" ${r&&r.hasMaterial?'selected':''}>是</option></select></div>
+        </div>
+      </div>
+
+      <!-- 發布狀態 -->
+      <div style="padding:0 0 16px;margin-bottom:16px;border-bottom:0.5px solid var(--border)">
+        <div style="font-size:11px;font-weight:600;color:#6B3FA0;letter-spacing:0.5px;margin-bottom:12px">發布狀態</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div style="background:var(--bg-page);border-radius:10px;padding:12px">
+            <div style="font-size:12px;font-weight:600;margin-bottom:10px">📸 Instagram</div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div><label class="proc-card-label">發布狀態</label><select id="sf-ig-pub" class="seed-input"><option value="0" ${r&&!r.igPublished?'selected':''}>未發布</option><option value="1" ${r&&r.igPublished?'selected':''}>已發布</option></select></div>
+              <div><label class="proc-card-label">發布日期</label><input id="sf-ig-date" type="date" value="${r&&r.igPublishDate||''}" class="seed-input"></div>
+              <div><label class="proc-card-label">發布連結</label><input id="sf-ig-link" type="url" value="${r&&r.igLink||''}" placeholder="https://instagram.com/p/…" class="seed-input"></div>
+            </div>
+          </div>
+          <div style="background:var(--bg-page);border-radius:10px;padding:12px">
+            <div style="font-size:12px;font-weight:600;margin-bottom:10px">🎵 TikTok</div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div><label class="proc-card-label">發布狀態</label><select id="sf-tt-pub" class="seed-input"><option value="0" ${r&&!r.ttPublished?'selected':''}>未發布</option><option value="1" ${r&&r.ttPublished?'selected':''}>已發布</option></select></div>
+              <div><label class="proc-card-label">發布日期</label><input id="sf-tt-date" type="date" value="${r&&r.ttPublishDate||''}" class="seed-input"></div>
+              <div><label class="proc-card-label">發布連結</label><input id="sf-tt-link" type="url" value="${r&&r.ttLink||''}" placeholder="https://tiktok.com/@…" class="seed-input"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 備註 -->
+      <div>
+        <div style="font-size:11px;font-weight:600;color:#6B3FA0;letter-spacing:0.5px;margin-bottom:12px">其他</div>
+        <div><label class="proc-card-label">備註</label><textarea id="sf-notes" rows="2" class="seed-input" style="resize:vertical">${r&&r.notes||''}</textarea></div>
+      </div>
+    </div>
+  `;
+
+  // Add CSS for seed inputs
+  if (!document.getElementById('seed-input-style')) {
+    const style = document.createElement('style');
+    style.id = 'seed-input-style';
+    style.textContent = '.seed-input { width:100%;margin-top:4px;padding:8px 10px;border:0.5px solid var(--border);border-radius:8px;font-size:13px;outline:none;background:var(--bg-card);color:var(--text-primary); } .seed-input:focus { border-color:#6B3FA0; }';
+    document.head.appendChild(style);
+  }
+
+  // Init selected products
+  window._seedSelectedProducts = [...selectedProducts];
+  renderSeedProductTags();
+  renderSeedProductList('');
+
+  document.getElementById('seed-modal-save-btn').onclick = () => saveSeedRecord(id);
+}
+
+function toggleSeedProductDropdown() {
+  const dd = document.getElementById('sf-product-dropdown');
+  const isOpen = dd.style.display !== 'none';
+  dd.style.display = isOpen ? 'none' : 'block';
+  if (!isOpen) setTimeout(() => { const s = document.getElementById('sf-prod-search'); if(s) s.focus(); }, 50);
+}
+
+function filterSeedProducts(q) { renderSeedProductList(q); }
+
+function renderSeedProductList(q) {
+  const list = document.getElementById('sf-prod-list');
+  if (!list) return;
+  const products = seedProducts.filter(p => !q || p.toLowerCase().includes(q.toLowerCase()));
+  list.innerHTML = products.map(p => `
+    <div onclick="toggleSeedProduct('${p.replace(/'/g,"\'")}',this)" style="padding:8px 12px;font-size:13px;cursor:pointer;color:${window._seedSelectedProducts.includes(p)?'#6B3FA0':'var(--text-primary)'};display:flex;align-items:center;gap:8px;background:${window._seedSelectedProducts.includes(p)?'#F3EFFE':'transparent'}">
+      <input type="checkbox" ${window._seedSelectedProducts.includes(p)?'checked':''} onclick="event.stopPropagation()" style="accent-color:#6B3FA0;width:14px;height:14px">
+      ${p}
+    </div>
+  `).join('') || '<div style="padding:12px;font-size:12px;color:var(--text-secondary);text-align:center">找不到產品</div>';
+}
+
+function toggleSeedProduct(name) {
+  if (window._seedSelectedProducts.includes(name)) {
+    window._seedSelectedProducts = window._seedSelectedProducts.filter(s => s !== name);
+  } else {
+    window._seedSelectedProducts.push(name);
+  }
+  renderSeedProductTags();
+  renderSeedProductList(document.getElementById('sf-prod-search')?.value || '');
+}
+
+function renderSeedProductTags() {
+  const container = document.getElementById('sf-product-tags');
+  if (!container) return;
+  container.innerHTML = window._seedSelectedProducts.map(p => `
+    <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;background:#F3EFFE;color:#6B3FA0;border-radius:20px;font-size:12px;font-weight:500">
+      ${p} <button type="button" onclick="toggleSeedProduct('${p.replace(/'/g,"\'")}');event.stopPropagation()" style="border:none;background:none;color:#6B3FA0;cursor:pointer;font-size:13px;padding:0;line-height:1">×</button>
+    </span>
+  `).join('');
+}
+
+function saveSeedRecord(id) {
+  const data = {
+    igName: document.getElementById('sf-ig').value.trim(),
+    followers: parseInt(document.getElementById('sf-followers').value)||0,
+    kolType: document.getElementById('sf-type').value,
+    products: window._seedSelectedProducts || [],
+    product: (window._seedSelectedProducts||[]).join(', '),
+    phone: document.getElementById('sf-phone').value.trim(),
+    shipDate: document.getElementById('sf-ship').value,
+    address: document.getElementById('sf-addr').value.trim(),
+    isPaid: document.getElementById('sf-paid').value === '1',
+    paidAmount: document.getElementById('sf-paidamt').value.trim(),
+    discountCode: document.getElementById('sf-code').value.trim(),
+    hasMaterial: document.getElementById('sf-material').value === '1',
+    igPublished: document.getElementById('sf-ig-pub').value === '1',
+    igPublishDate: document.getElementById('sf-ig-date').value,
+    igLink: document.getElementById('sf-ig-link').value.trim(),
+    ttPublished: document.getElementById('sf-tt-pub').value === '1',
+    ttPublishDate: document.getElementById('sf-tt-date').value,
+    ttLink: document.getElementById('sf-tt-link').value.trim(),
+    notes: document.getElementById('sf-notes').value.trim(),
+    createdAt: id ? (seedRecords.find(r=>r.id===id)||{}).createdAt || new Date() : new Date()
+  };
+  if (id) {
+    db.collection('seeding_records').doc(id).set(data);
+  } else {
+    db.collection('seeding_records').add(data);
+  }
+  closeSeedModal();
+  showToast('✅ 已儲存');
+}
+
+function deleteSeedRecord(id) {
+  if (!confirm('確定刪除這筆記錄？')) return;
+  db.collection('seeding_records').doc(id).delete();
+}
+
+function addToKolDB(seedId) {
+  const r = seedRecords.find(x => x.id === seedId);
+  if (!r) return;
+  const existing = seedDatabase.find(x => x.igName === r.igName);
+  if (existing) {
+    const products = existing.products || [];
+    if (r.product && !products.includes(r.product)) products.push(r.product);
+    db.collection('kol_database').doc(existing.id).update({
+      products,
+      collabCount: (existing.collabCount||0) + 1
+    });
+    showToast('✅ 已更新資料庫');
+  } else {
+    db.collection('kol_database').add({
+      igName: r.igName,
+      followers: r.followers,
+      kolType: r.kolType,
+      phone: r.phone,
+      discountCode: r.discountCode,
+      products: r.product ? [r.product] : [],
+      collabCount: 1,
+      rating: '普通',
+      notes: ''
+    });
+    showToast('✅ 已加入資料庫');
+  }
+}
+
+function openKolDBForm(id) {
+  const r = id ? seedDatabase.find(x => x.id === id) : {};
+  const modal = document.getElementById('seed-modal');
+  modal.classList.add('show');
+  document.getElementById('seed-modal-title').textContent = id ? '編輯 KOL 資料' : '新增 KOL';
+  document.getElementById('seed-modal-body').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div><label class="proc-card-label">IG 名字</label><input id="kf-ig" type="text" value="${r&&r.igName||''}" style="width:100%;margin-top:4px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;background:var(--bg-card);color:var(--text-primary)"></div>
+      <div><label class="proc-card-label">粉絲數</label><input id="kf-followers" type="number" value="${r&&r.followers||''}" style="width:100%;margin-top:4px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;background:var(--bg-card);color:var(--text-primary)"></div>
+      <div><label class="proc-card-label">類型</label><select id="kf-type" style="width:100%;margin-top:4px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;background:var(--bg-card);color:var(--text-primary)"><option ${r&&r.kolType==='KOL'?'selected':''}>KOL</option><option ${r&&r.kolType==='KOC'?'selected':''}>KOC</option></select></div>
+      <div><label class="proc-card-label">合作評價</label><select id="kf-rating" style="width:100%;margin-top:4px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;background:var(--bg-card);color:var(--text-primary)"><option ${r&&r.rating==='推薦再合作'?'selected':''}>推薦再合作</option><option ${r&&r.rating==='普通'?'selected':''}>普通</option><option ${r&&r.rating==='不再合作'?'selected':''}>不再合作</option></select></div>
+      <div><label class="proc-card-label">手機</label><input id="kf-phone" type="text" value="${r&&r.phone||''}" style="width:100%;margin-top:4px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;background:var(--bg-card);color:var(--text-primary)"></div>
+      <div><label class="proc-card-label">折扣碼</label><input id="kf-code" type="text" value="${r&&r.discountCode||''}" style="width:100%;margin-top:4px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;background:var(--bg-card);color:var(--text-primary)"></div>
+      <div style="grid-column:1/-1"><label class="proc-card-label">備註</label><textarea id="kf-notes" rows="2" style="width:100%;margin-top:4px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;resize:vertical;background:var(--bg-card);color:var(--text-primary)">${r&&r.notes||''}</textarea></div>
+    </div>`;
+  document.getElementById('seed-modal-save-btn').onclick = () => saveKolDB(id, r);
+}
+
+function saveKolDB(id, existing) {
+  const data = {
+    igName: document.getElementById('kf-ig').value.trim(),
+    followers: parseInt(document.getElementById('kf-followers').value)||0,
+    kolType: document.getElementById('kf-type').value,
+    rating: document.getElementById('kf-rating').value,
+    phone: document.getElementById('kf-phone').value.trim(),
+    discountCode: document.getElementById('kf-code').value.trim(),
+    notes: document.getElementById('kf-notes').value.trim(),
+    products: existing && existing.products ? existing.products : [],
+    collabCount: existing && existing.collabCount ? existing.collabCount : 0
+  };
+  if (id) {
+    db.collection('kol_database').doc(id).set(data);
+  } else {
+    db.collection('kol_database').add(data);
+  }
+  closeSeedModal();
+  showToast('✅ 已儲存');
+}
+
+function deleteKolDB(id) {
+  if (!confirm('確定從資料庫移除？')) return;
+  db.collection('kol_database').doc(id).delete();
+}
+
+function toggleSeedPublish(id, platform) {
+  const r = seedRecords.find(x => x.id === id);
+  if (!r) return;
+  const update = platform === 'ig' ? { igPublished: !r.igPublished } : { ttPublished: !r.ttPublished };
+  db.collection('seeding_records').doc(id).update(update);
+  showToast('✅ 狀態已更新');
+}
+
+function autoLoadInventory() {
+  if (invRawData) return;
+  const cb = 'invauto_' + Date.now();
+  const script = document.createElement('script');
+  window[cb] = function(json) {
+    delete window[cb]; script.remove();
+    if (json.success) invRawData = json.data;
+  };
+  script.src = INV_URL + '?callback=' + cb;
+  document.body.appendChild(script);
+}
+
 </script>
+
+<div class="modal-overlay" id="seed-modal" onclick="if(event.target===this)closeSeedModal()">
+  <div class="modal" style="max-width:600px;width:90%;max-height:85vh;overflow-y:auto">
+    <div class="modal-header">
+      <div class="modal-title" id="seed-modal-title">新增 Seeding</div>
+      <button class="modal-close" onclick="closeSeedModal()">×</button>
+    </div>
+    <div style="padding:20px" id="seed-modal-body"></div>
+    <div style="padding:0 20px 20px;display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-outline" onclick="closeSeedModal()">取消</button>
+      <button class="btn btn-primary" id="seed-modal-save-btn">儲存</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
