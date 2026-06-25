@@ -363,6 +363,9 @@
       <span class="icon">💰</span> 利潤表
     </div>
     <div class="nav-section-label">設定</div>
+    <div class="nav-item" onclick="showPage('inventory')" id="nav-inventory">
+      <span class="icon">📦</span> 產品資料庫
+    </div>
     <div class="nav-item" onclick="showPage('config')" id="nav-config">
       <span class="icon">⚙️</span> 連接設定
     </div>
@@ -455,6 +458,27 @@
         </div>
       </div>
       <div id="profit-error" style="display:none;text-align:center;padding:60px;color:#EF4444"></div>
+    </div>
+
+    <!-- INVENTORY PAGE -->
+    <div class="page" id="page-inventory">
+      <div id="inv-loading" style="text-align:center;padding:60px;color:#6B7280">載入中…</div>
+      <div id="inv-content" style="display:none">
+        <div class="stats-row" id="inv-stats"></div>
+        <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+          <input id="inv-search" type="text" placeholder="搜尋 SKU 或產品名稱…" style="flex:1;min-width:200px;padding:8px 12px;border:0.5px solid var(--border);border-radius:8px;font-size:13px;outline:none;background:var(--bg-card);color:var(--text-primary)">
+          <button class="btn btn-outline filter-inv active" onclick="filterInv('all',this)">全部</button>
+          <button class="btn btn-outline filter-inv" onclick="filterInv('充足',this)">充足</button>
+          <button class="btn btn-outline filter-inv" onclick="filterInv('需補貨',this)">需補貨</button>
+          <button class="btn btn-outline filter-inv" onclick="filterInv('缺貨',this)">缺貨</button>
+        </div>
+        <div style="background:var(--bg-card);border-radius:14px;border:1px solid var(--border);overflow:hidden">
+          <div style="overflow-x:auto">
+            <table id="inv-table" style="width:100%;border-collapse:collapse;font-size:12px"></table>
+          </div>
+        </div>
+      </div>
+      <div id="inv-error" style="display:none;text-align:center;padding:60px;color:#EF4444"></div>
     </div>
 
     <!-- CONFIG PAGE -->
@@ -782,6 +806,7 @@ function showPage(page) {
     procurement: ['採購管理', '從 Google 表單自動同步的採購申請'],
     groupbuy: ['團購資料', '記錄和追蹤所有團購活動'],
     profit: ['利潤表', 'Satu 每月營收與利潤分析'],
+    inventory: ['產品資料庫', '庫存狀態與成本售價管理'],
     config: ['連接設定', '設定資料來源和 API 連線'],
   };
   document.getElementById('page-title').textContent = titles[page][0];
@@ -806,6 +831,7 @@ function renderPage() {
   if (state.page === 'procurement') renderProcurement();
   if (state.page === 'groupbuy') renderGroupbuy();
   if (state.page === 'profit') loadProfit();
+  if (state.page === 'inventory') loadInventory();
 }
 
 // ===================== BRAND SWITCH =====================
@@ -1622,6 +1648,174 @@ function renderProductTable(rows, activeMths, monthCols) {
   });
   html += `</tbody></table></div>`;
   document.getElementById('profit-product-section').innerHTML = html;
+}
+
+// ===================== INVENTORY =====================
+const INV_URL = 'https://script.google.com/macros/s/AKfycbyvRSdiUoAchHWqlOzuBbO53Us2WsANJfbRIkg3LjiCevT0L_zbBGvOZhqEgJcbUkon/exec';
+let invRawData = null;
+let invFilter = 'all';
+
+function loadInventory() {
+  if (invRawData) { renderInventory(invRawData); return; }
+  document.getElementById('inv-loading').style.display = 'block';
+  document.getElementById('inv-content').style.display = 'none';
+  document.getElementById('inv-error').style.display = 'none';
+  const cb = 'invcb_' + Date.now();
+  const script = document.createElement('script');
+  window[cb] = function(json) {
+    delete window[cb]; script.remove();
+    if (!json.success) {
+      document.getElementById('inv-loading').style.display = 'none';
+      document.getElementById('inv-error').style.display = 'block';
+      document.getElementById('inv-error').textContent = '載入失敗：' + json.error;
+      return;
+    }
+    invRawData = json.data;
+    renderInventory(json.data);
+  };
+  script.src = INV_URL + '?callback=' + cb;
+  document.body.appendChild(script);
+}
+
+function getInvOverrides() {
+  try { return JSON.parse(localStorage.getItem('inv_overrides') || '{}'); } catch(e) { return {}; }
+}
+function saveInvOverride(sku, field, val) {
+  const o = getInvOverrides();
+  if (!o[sku]) o[sku] = {};
+  o[sku][field] = val;
+  localStorage.setItem('inv_overrides', JSON.stringify(o));
+}
+
+function filterInv(f, btn) {
+  invFilter = f;
+  document.querySelectorAll('.filter-inv').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  if (invRawData) renderInventory(invRawData);
+}
+
+function renderInventory(data) {
+  // Find header row (row with SKU編號)
+  let headerIdx = data.findIndex(r => r.some(c => c.toString().includes('SKU編號')));
+  if (headerIdx === -1) headerIdx = 3;
+  const headers = data[headerIdx];
+  const rows = data.slice(headerIdx + 1).filter(r => {
+    const sku = r[0] ? r[0].toString().trim() : '';
+    const name = r[1] ? r[1].toString().trim() : '';
+    return (sku || name) && sku !== '合計' && name !== '合計';
+  });
+
+  // Find column indices
+  const skuCol = 0;
+  const nameCol = 1;
+  const initQtyCol = headers.findIndex(h => h.toString().includes('期初庫存'));
+  const currQtyCol = headers.findIndex(h => h.toString().includes('目前剩餘'));
+  const statusColIdx = headers.findIndex(h => h.toString().includes('狀態'));
+
+  const overrides = getInvOverrides();
+
+  // Filter
+  const search = (document.getElementById('inv-search') || {value:''}).value.toLowerCase();
+  const filtered = rows.filter(r => {
+    const sku = (r[skuCol]||'').toString().trim();
+    const name = (r[nameCol]||'').toString().trim();
+    const rawStatus = (r[statusColIdx]||'').toString();
+    const status = rawStatus.includes('充足') ? '充足' : rawStatus.includes('需補') ? '需補貨' : rawStatus.includes('缺') ? '缺貨' : '充足';
+    const matchSearch = !search || sku.toLowerCase().includes(search) || name.toLowerCase().includes(search);
+    const matchFilter = invFilter === 'all' || status === invFilter;
+    return matchSearch && matchFilter;
+  });
+
+  // Stats
+  const allStatuses = rows.map(r => {
+    const s = (r[statusColIdx]||'').toString();
+    return s.includes('充足') ? '充足' : s.includes('需補') ? '需補貨' : s.includes('缺') ? '缺貨' : '充足';
+  });
+  const total = rows.length;
+  const ok = allStatuses.filter(s => s === '充足').length;
+  const low = allStatuses.filter(s => s === '需補貨').length;
+  const out = allStatuses.filter(s => s === '缺貨').length;
+
+  document.getElementById('inv-stats').innerHTML = `
+    <div class="stat-card total"><div class="stat-num">${total}</div><div class="stat-label">總產品數</div></div>
+    <div class="stat-card arrived"><div class="stat-num" style="color:#059669">${ok}</div><div class="stat-label">庫存充足</div></div>
+    <div class="stat-card ordered"><div class="stat-num" style="color:#D97706">${low}</div><div class="stat-label">需補貨</div></div>
+    <div class="stat-card pending"><div class="stat-num" style="color:#DC2626">${out}</div><div class="stat-label">缺貨</div></div>
+  `;
+
+  // Max qty for bar
+  const maxQty = Math.max(...rows.map(r => parseFloat(r[currQtyCol])||0), 1);
+
+  let html = `<thead><tr style="background:var(--bg-page)">
+    <th style="padding:10px 12px;text-align:left;font-size:11px;color:var(--text-secondary);white-space:nowrap">SKU</th>
+    <th style="padding:10px 12px;text-align:left;font-size:11px;color:var(--text-secondary)">產品名稱</th>
+    <th style="padding:10px 12px;text-align:right;font-size:11px;color:var(--text-secondary)">目前庫存</th>
+    <th style="padding:10px 12px;text-align:right;font-size:11px;color:var(--text-secondary)">成本價 (RM)</th>
+    <th style="padding:10px 12px;text-align:right;font-size:11px;color:var(--text-secondary)">售價 (RM)</th>
+    <th style="padding:10px 12px;text-align:right;font-size:11px;color:var(--text-secondary)">毛利率</th>
+    <th style="padding:10px 12px;text-align:left;font-size:11px;color:var(--text-secondary)">狀態</th>
+  </tr></thead><tbody>`;
+
+  filtered.forEach((r, i) => {
+    const sku = (r[skuCol]||'').toString().trim();
+    const name = (r[nameCol]||'').toString().trim();
+    const qty = parseFloat(r[currQtyCol]) || 0;
+    const rawStatus = (r[statusColIdx]||'').toString();
+    const status = rawStatus.includes('充足') ? '充足' : rawStatus.includes('需補') ? '需補貨' : rawStatus.includes('缺') ? '缺貨' : '充足';
+    const badgeCls = status === '充足' ? 'background:#D1FAE5;color:#065F46' : status === '需補貨' ? 'background:#FEF3C7;color:#92400E' : 'background:#FEE2E2;color:#991B1B';
+    const barColor = status === '充足' ? '#059669' : status === '需補貨' ? '#D97706' : '#DC2626';
+    const barW = Math.round((qty / maxQty) * 100);
+    const key = sku || name;
+    const ov = overrides[key] || {};
+    const cost = ov.cost || '';
+    const price = ov.price || '';
+    const margin = (cost && price && parseFloat(cost) > 0 && parseFloat(price) > 0)
+      ? (((parseFloat(price) - parseFloat(cost)) / parseFloat(price)) * 100).toFixed(1) + '%'
+      : '—';
+    const marginColor = margin !== '—' ? (parseFloat(margin) >= 60 ? '#059669' : parseFloat(margin) >= 40 ? '#D97706' : '#DC2626') : 'var(--text-secondary)';
+    const bg = i % 2 === 0 ? '' : 'background:var(--bg-page)';
+
+    html += `<tr style="${bg}">
+      <td style="padding:10px 12px;font-family:monospace;font-size:11px;color:var(--text-secondary)">${sku}</td>
+      <td style="padding:10px 12px;font-weight:500;font-size:13px">${name}</td>
+      <td style="padding:10px 12px">
+        <div style="display:flex;align-items:center;gap:8px;justify-content:flex-end">
+          <span style="min-width:35px;text-align:right;font-size:12px">${qty}</span>
+          <div style="width:60px;background:var(--border);border-radius:4px;height:4px">
+            <div style="width:${barW}%;background:${barColor};border-radius:4px;height:4px"></div>
+          </div>
+        </div>
+      </td>
+      <td style="padding:6px 12px;text-align:right">
+        <input type="text" value="${cost}" placeholder="填入…"
+          style="width:80px;text-align:right;border:none;border-bottom:1.5px solid transparent;background:transparent;font-size:12px;padding:2px 4px;color:var(--text-secondary);outline:none"
+          onfocus="this.style.borderBottomColor='#6B3FA0'"
+          onblur="this.style.borderBottomColor='transparent';saveInvOverride('${key}','cost',this.value);if(invRawData)renderInventory(invRawData)"
+        >
+      </td>
+      <td style="padding:6px 12px;text-align:right">
+        <input type="text" value="${price}" placeholder="填入…"
+          style="width:80px;text-align:right;border:none;border-bottom:1.5px solid #6B3FA0;background:transparent;font-size:12px;padding:2px 4px;color:#6B3FA0;outline:none;font-weight:500"
+          onfocus="this.style.borderBottomColor='#3C3489'"
+          onblur="this.style.borderBottomColor='#6B3FA0';saveInvOverride('${key}','price',this.value);if(invRawData)renderInventory(invRawData)"
+        >
+      </td>
+      <td style="padding:10px 12px;text-align:right;font-weight:500;color:${marginColor}">${margin}</td>
+      <td style="padding:10px 12px"><span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;${badgeCls}">${status}</span></td>
+    </tr>`;
+  });
+
+  html += '</tbody>';
+  document.getElementById('inv-table').innerHTML = html;
+  document.getElementById('inv-loading').style.display = 'none';
+  document.getElementById('inv-content').style.display = 'block';
+
+  // Search input listener
+  const searchEl = document.getElementById('inv-search');
+  if (searchEl && !searchEl._bound) {
+    searchEl._bound = true;
+    searchEl.addEventListener('input', () => { if(invRawData) renderInventory(invRawData); });
+  }
 }
 
 </script>
