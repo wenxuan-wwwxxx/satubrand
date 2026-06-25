@@ -342,6 +342,20 @@
   .ttbc-theme .brand-btn.satu { background: transparent; color: rgba(255,255,255,0.35); border-color: rgba(255,255,255,0.1); }
   .ttbc-theme .brand-btn.ttbc { background: var(--brand-ttbc); color: white; }
 </style>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyDDWjSj35cPof5_6U8Xs9h5llc5sdtBwU8",
+  authDomain: "satubrand.firebaseapp.com",
+  projectId: "satubrand",
+  storageBucket: "satubrand.firebasestorage.app",
+  messagingSenderId: "196028457214",
+  appId: "1:196028457214:web:cf1289d00e88018244c5af"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
 <body>
@@ -786,6 +800,10 @@ function saveLocal() {
   localStorage.setItem('bh_groupbuys', JSON.stringify(state.groupbuys));
   localStorage.setItem('bh_overrides', JSON.stringify(state.overrides));
 }
+function saveOverride(id) {
+  const data = state.overrides[id] || {};
+  db.collection('overrides').doc(String(id)).set(data);
+}
 
 // ===================== NAVIGATION =====================
 function showPage(page) {
@@ -1132,6 +1150,7 @@ function togglePaid(id, btn) {
   const isPaid = !state.overrides[id].paid;
   state.overrides[id].paid = isPaid;
   saveLocal();
+  saveOverride(id);
   btn.classList.toggle('paid', isPaid);
   btn.textContent = isPaid ? '✅ 已付款' : '標記已付款';
   showToast(isPaid ? '✅ 已標記付款' : '已取消付款');
@@ -1421,7 +1440,18 @@ const SPLIT_ROW = 'SATU ONE 无线直发梳';
 function loadKPI() {
   try { return JSON.parse(localStorage.getItem('profit_kpi') || '{}'); } catch(e) { return {}; }
 }
-function saveKPI(kpi) { localStorage.setItem('profit_kpi', JSON.stringify(kpi)); }
+function saveKPI(kpi) {
+  localStorage.setItem('profit_kpi', JSON.stringify(kpi));
+  db.collection('settings').doc('profit_kpi').set(kpi);
+}
+function loadKPIFromFirebase(callback) {
+  db.collection('settings').doc('profit_kpi').get().then(doc => {
+    if (doc.exists) {
+      localStorage.setItem('profit_kpi', JSON.stringify(doc.data()));
+    }
+    callback();
+  }).catch(() => callback());
+}
 
 function loadProfit() {
   if (profitLoaded && profitRawData) { renderProfit(profitRawData); return; }
@@ -1685,6 +1715,15 @@ function saveInvOverride(sku, field, val) {
   if (!o[sku]) o[sku] = {};
   o[sku][field] = val;
   localStorage.setItem('inv_overrides', JSON.stringify(o));
+  db.collection('inv_overrides').doc(sku.replace(/[\/\.#\[\]*]/g,'_')).set(o[sku]);
+}
+function loadInvOverridesFromFirebase(callback) {
+  db.collection('inv_overrides').get().then(snapshot => {
+    const o = {};
+    snapshot.forEach(doc => { o[doc.id] = doc.data(); });
+    if (Object.keys(o).length) localStorage.setItem('inv_overrides', JSON.stringify(o));
+    callback();
+  }).catch(() => callback());
 }
 
 function filterInv(f, btn) {
