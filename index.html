@@ -806,6 +806,27 @@ function loadLocal() {
   if (p) state.procurements = JSON.parse(p);
   if (g) state.groupbuys = JSON.parse(g);
   if (o) state.overrides = JSON.parse(o);
+
+  // Firebase real-time sync for overrides
+  db.collection('overrides').onSnapshot(snapshot => {
+    snapshot.docChanges().forEach(change => {
+      const docId = change.doc.id;
+      // Try both string and number keys to ensure consistency
+      const numId = parseInt(docId);
+      const id = (!isNaN(numId) && String(numId) === docId) ? numId : docId;
+      if (change.type === 'removed') {
+        delete state.overrides[id];
+        delete state.overrides[docId];
+      } else {
+        const data = change.doc.data();
+        state.overrides[id] = { ...(state.overrides[id]||{}), ...data };
+        if (id !== docId) state.overrides[docId] = state.overrides[id];
+      }
+    });
+    saveLocal();
+    if (state.page === 'procurement') renderProcurement();
+    updateBadge();
+  });
 }
 
 function saveLocal() {
@@ -1269,9 +1290,10 @@ function saveModalChanges() {
   state.overrides[modalId].warehouseInDate = document.getElementById('md-warehouse-date').value;
   state.overrides[modalId].notes = document.getElementById('md-notes').value;
   saveLocal();
+  saveOverride(modalId);
   updateBadge();
-  renderProcurement();
   closeModal();
+  renderProcurement();
   showToast('✅ 已儲存', 'success');
 }
 
