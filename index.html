@@ -357,6 +357,7 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -480,25 +481,34 @@ const db = firebase.firestore();
       <div id="profit-error" style="display:none;text-align:center;padding:60px;color:#EF4444"></div>
     </div>
 
-    <!-- INVENTORY PAGE -->
+    <!-- 售價記錄 PAGE -->
     <div class="page" id="page-inventory">
-      <div id="inv-loading" style="text-align:center;padding:60px;color:#6B7280">載入中…</div>
-      <div id="inv-content" style="display:none">
-        <div class="stats-row" id="inv-stats"></div>
-        <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
-          <input id="inv-search" type="text" placeholder="搜尋 SKU 或產品名稱…" style="flex:1;min-width:200px;padding:8px 12px;border:0.5px solid var(--border);border-radius:8px;font-size:13px;outline:none;background:var(--bg-card);color:var(--text-primary)">
-          <button class="btn btn-outline filter-inv active" onclick="filterInv('all',this)">全部</button>
-          <button class="btn btn-outline filter-inv" onclick="filterInv('充足',this)">充足</button>
-          <button class="btn btn-outline filter-inv" onclick="filterInv('需補貨',this)">需補貨</button>
-          <button class="btn btn-outline filter-inv" onclick="filterInv('缺貨',this)">缺貨</button>
-        </div>
-        <div style="background:var(--bg-card);border-radius:14px;border:1px solid var(--border);overflow:hidden">
-          <div style="overflow-x:auto">
-            <table id="inv-table" style="width:100%;border-collapse:collapse;font-size:12px"></table>
-          </div>
+      <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+        <input id="price-search" type="text" placeholder="搜尋 SKU 或產品名稱…"
+          style="flex:1;min-width:200px;padding:8px 12px;border:0.5px solid var(--border);border-radius:8px;font-size:13px;outline:none;background:var(--bg-card);color:var(--text-primary)"
+          oninput="renderPriceTable()">
+        <button class="btn btn-primary" onclick="addPriceRow()">+ 新增產品</button>
+      </div>
+      <div style="background:var(--bg-card);border-radius:14px;border:1px solid var(--border);overflow:hidden">
+        <div style="overflow-x:auto">
+          <table id="price-table" style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead>
+              <tr style="background:var(--bg-page)">
+                <th style="padding:10px 14px;text-align:left;font-size:11px;color:var(--text-secondary);white-space:nowrap">SKU</th>
+                <th style="padding:10px 14px;text-align:left;font-size:11px;color:var(--text-secondary)">產品名稱</th>
+                <th style="padding:10px 14px;text-align:right;font-size:11px;color:var(--text-secondary)">成本 (RM)</th>
+                <th style="padding:10px 14px;text-align:right;font-size:11px;color:var(--text-secondary)">進價 (RM)</th>
+                <th style="padding:10px 14px;text-align:right;font-size:11px;color:var(--text-secondary)">終端價 (RM)</th>
+                <th style="padding:10px 14px;text-align:right;font-size:11px;color:var(--text-secondary)">售價 (RM)</th>
+                <th style="padding:10px 14px;text-align:right;font-size:11px;color:var(--text-secondary)">毛利率</th>
+                <th style="padding:10px 14px;text-align:center;font-size:11px;color:var(--text-secondary)">操作</th>
+              </tr>
+            </thead>
+            <tbody id="price-tbody"></tbody>
+          </table>
         </div>
       </div>
-      <div id="inv-error" style="display:none;text-align:center;padding:60px;color:#EF4444"></div>
+      <div style="font-size:11px;color:var(--text-secondary);margin-top:8px">資料儲存在 Firebase，跨裝置同步</div>
     </div>
 
     <!-- SEEDING PAGE -->
@@ -511,42 +521,46 @@ const db = firebase.firestore();
       <div id="seed-database-view" style="display:none"></div>
     </div>
 
-    <!-- WMS 庫存看板 PAGE -->
+    <!-- 庫存看板 PAGE -->
     <div class="page" id="page-wms">
       <div id="wms-loading" style="text-align:center;padding:60px;color:var(--text-secondary)">
         <div style="font-size:32px;margin-bottom:12px">⏳</div>
-        <div style="font-size:14px;font-weight:600">正在從 WMS 拉取庫存資料…</div>
-        <div style="font-size:12px;margin-top:6px;color:var(--text-secondary)">首次載入約需 10–20 秒</div>
+        <div style="font-size:14px;font-weight:600">正在載入庫存資料…</div>
       </div>
       <div id="wms-error" style="display:none;text-align:center;padding:60px">
         <div style="font-size:32px;margin-bottom:12px">❌</div>
         <div style="font-size:14px;font-weight:600;color:#DC2626" id="wms-error-msg"></div>
       </div>
       <div id="wms-content" style="display:none">
+        <!-- Stats -->
         <div class="stats-row" id="wms-stats"></div>
+        <!-- 低庫存警示 -->
         <div id="wms-alert-box" style="display:none;background:#FEF3C7;border:1px solid #FCD34D;border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#92400E"></div>
+        <!-- TikTok 上傳區 -->
+        <div id="wms-upload-zone" style="border:1.5px dashed var(--border);border-radius:12px;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;gap:16px;cursor:pointer;transition:all 0.15s"
+          onclick="document.getElementById('wms-tt-file').click()"
+          ondragover="event.preventDefault();this.style.borderColor='#6B3FA0';this.style.background='#F3EFFE'"
+          ondragleave="this.style.borderColor='';this.style.background=''"
+          ondrop="event.preventDefault();this.style.borderColor='';this.style.background='';handleWmsTTFile(event.dataTransfer.files[0])">
+          <div style="font-size:24px">📤</div>
+          <div>
+            <div style="font-size:13px;font-weight:600;color:var(--text-primary)">上傳 TikTok 銷售報表</div>
+            <div style="font-size:11px;color:var(--text-secondary);margin-top:2px" id="wms-tt-label">拖放或點擊上傳 .xlsx — 自動扣除 TikTok 出貨量</div>
+          </div>
+          <button class="btn btn-outline" style="margin-left:auto;font-size:12px" onclick="event.stopPropagation();clearWmsTT()">清除 TikTok 資料</button>
+          <input type="file" id="wms-tt-file" accept=".xlsx" style="display:none" onchange="handleWmsTTFile(this.files[0])">
+        </div>
+        <!-- 篩選 -->
         <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
           <input id="wms-search" type="text" placeholder="搜尋 SKU 或產品名稱…"
             style="flex:1;min-width:200px;padding:8px 12px;border:0.5px solid var(--border);border-radius:8px;font-size:13px;outline:none;background:var(--bg-card);color:var(--text-primary)"
             oninput="renderWms()">
-          <select id="wms-status-filter" onchange="renderWms()"
-            style="padding:8px 10px;border:0.5px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg-card);color:var(--text-primary);outline:none">
-            <option value="all">全部狀態</option>
-            <option value="GOOD">GOOD（良品）</option>
-            <option value="DAMAGE">DAMAGE（損品）</option>
-          </select>
           <button class="btn btn-outline wms-filter-btn active" onclick="setWmsFilter('all',this)">全部</button>
           <button class="btn btn-outline wms-filter-btn" onclick="setWmsFilter('low',this)" style="border-color:#FCD34D;color:#92400E">⚠ 低庫存</button>
           <button class="btn btn-outline wms-filter-btn" onclick="setWmsFilter('zero',this)" style="border-color:#FCA5A5;color:#991B1B">⛔ 缺貨</button>
           <button class="btn btn-outline" onclick="refreshWms()" style="margin-left:auto">🔄 重新載入</button>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:12px;color:var(--text-secondary)">
-          <span>低庫存警示閾值：</span>
-          <input id="wms-threshold" type="number" value="20" min="1"
-            style="width:60px;padding:4px 8px;border:0.5px solid var(--border);border-radius:6px;font-size:12px;text-align:center;outline:none"
-            oninput="saveWmsThreshold();renderWms()">
-          <span>件以下顯示警示</span>
-        </div>
+        <!-- 表格 -->
         <div style="background:var(--bg-card);border-radius:14px;border:1px solid var(--border);overflow:hidden">
           <div style="overflow-x:auto">
             <table id="wms-table" style="width:100%;border-collapse:collapse;font-size:12px"></table>
@@ -935,9 +949,9 @@ function showPage(page) {
     procurement: ['採購管理', '從 Google 表單自動同步的採購申請'],
     groupbuy: ['團購資料', '記錄和追蹤所有團購活動'],
     profit: ['利潤表', 'Satu 每月營收與利潤分析'],
-    inventory: ['產品資料庫', '庫存狀態與成本售價管理'],
+    inventory: ['售價記錄', '產品成本、進價、終端價與售價管理'],
     seeding: ['Seeding 管理', 'KOL / KOC 寄樣記錄與資料庫'],
-    wms: ['庫存看板', '即時 WMS 庫存數據，含低庫存警示'],
+    wms: ['庫存看板', 'Google Sheet 期初庫存 × 官網 × TikTok 即時追蹤'],
     config: ['連接設定', '設定資料來源和 API 連線'],
   };
   document.getElementById('page-title').textContent = titles[page][0];
@@ -962,7 +976,7 @@ function renderPage() {
   if (state.page === 'procurement') renderProcurement();
   if (state.page === 'groupbuy') renderGroupbuy();
   if (state.page === 'profit') loadProfit();
-  if (state.page === 'inventory') loadInventory();
+  if (state.page === 'inventory') loadPriceTable();
   if (state.page === 'seeding') initSeeding();
   if (state.page === 'wms') loadWms();
 }
@@ -1255,11 +1269,23 @@ function renderProcurement() {
       <div class="h-progress">${progressSteps}</div>
 
       <div class="proc-card-footer">
-        <span></span>
+        <button onclick="deleteProcurement(${id})" style="border:none;background:none;color:#DC2626;cursor:pointer;font-size:12px;padding:4px 8px;border-radius:6px;opacity:0.6" onmouseover="this.style.opacity='1';this.style.background='#FEE2E2'" onmouseout="this.style.opacity='0.6';this.style.background='none'">🗑 刪除</button>
         <button class="detail-btn" onclick="openModal(${id})">詳情 →</button>
       </div>
     </div>`;
   }).join('');
+}
+
+function deleteProcurement(id) {
+  if (!confirm('確定刪除這筆採購申請？（只從 BrandHub 移除，不影響 Google Sheet）')) return;
+  state.procurements = state.procurements.filter(r => r._id !== id);
+  delete state.overrides[id];
+  saveLocal();
+  saveOverride(id);
+  db.collection('overrides').doc(String(id)).delete();
+  renderProcurement();
+  updateBadge();
+  showToast('已刪除');
 }
 
 function togglePaid(id, btn) {
@@ -1975,6 +2001,89 @@ function renderInventory(data) {
   }
 }
 
+// ===================== 售價記錄 =====================
+let priceRecords = [];
+
+function loadPriceTable() {
+  db.collection('price_records').orderBy('name').onSnapshot(snap => {
+    priceRecords = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderPriceTable();
+  });
+}
+
+function renderPriceTable() {
+  const search = (document.getElementById('price-search')||{value:''}).value.toLowerCase();
+  const filtered = priceRecords.filter(r =>
+    !search || (r.sku||'').toLowerCase().includes(search) || (r.name||'').toLowerCase().includes(search)
+  );
+
+  const tbody = document.getElementById('price-tbody');
+  if (!tbody) return;
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8" style="padding:40px;text-align:center;color:var(--text-secondary)">尚無產品資料，點「新增產品」開始建立</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filtered.map((r, i) => {
+    const cost = parseFloat(r.cost) || 0;
+    const salePrice = parseFloat(r.salePrice) || 0;
+    const margin = cost > 0 && salePrice > 0
+      ? (((salePrice - cost) / salePrice) * 100).toFixed(1) + '%'
+      : '—';
+    const marginColor = margin !== '—'
+      ? (parseFloat(margin) >= 60 ? '#059669' : parseFloat(margin) >= 40 ? '#D97706' : '#DC2626')
+      : 'var(--text-secondary)';
+    const bg = i % 2 === 0 ? '' : 'background:var(--bg-page)';
+
+    const field = (val, key, placeholder) => `
+      <input type="text" value="${val||''}" placeholder="${placeholder}"
+        style="width:80px;text-align:right;border:none;border-bottom:1.5px solid var(--border);background:transparent;font-size:13px;padding:2px 4px;color:var(--text-primary);outline:none"
+        onfocus="this.style.borderBottomColor='#6B3FA0'"
+        onblur="this.style.borderBottomColor='var(--border)';updatePriceField('${r.id}','${key}',this.value)">`;
+
+    return `<tr style="${bg}">
+      <td style="padding:8px 14px;font-family:monospace;font-size:11px;color:var(--text-secondary)">
+        <input type="text" value="${r.sku||''}" placeholder="SKU"
+          style="width:90px;border:none;border-bottom:1.5px solid var(--border);background:transparent;font-size:11px;padding:2px 4px;font-family:monospace;color:var(--text-secondary);outline:none"
+          onfocus="this.style.borderBottomColor='#6B3FA0'"
+          onblur="this.style.borderBottomColor='var(--border)';updatePriceField('${r.id}','sku',this.value)">
+      </td>
+      <td style="padding:8px 14px;font-weight:500">
+        <input type="text" value="${r.name||''}" placeholder="產品名稱"
+          style="width:180px;border:none;border-bottom:1.5px solid var(--border);background:transparent;font-size:13px;padding:2px 4px;color:var(--text-primary);outline:none"
+          onfocus="this.style.borderBottomColor='#6B3FA0'"
+          onblur="this.style.borderBottomColor='var(--border)';updatePriceField('${r.id}','name',this.value)">
+      </td>
+      <td style="padding:8px 14px;text-align:right">${field(r.cost,'cost','0.00')}</td>
+      <td style="padding:8px 14px;text-align:right">${field(r.purchasePrice,'purchasePrice','0.00')}</td>
+      <td style="padding:8px 14px;text-align:right">${field(r.retailPrice,'retailPrice','0.00')}</td>
+      <td style="padding:8px 14px;text-align:right">${field(r.salePrice,'salePrice','0.00')}</td>
+      <td style="padding:8px 14px;text-align:right;font-weight:500;color:${marginColor}">${margin}</td>
+      <td style="padding:8px 14px;text-align:center">
+        <button onclick="deletePriceRow('${r.id}')" style="border:none;background:none;color:#DC2626;cursor:pointer;font-size:13px;padding:2px 6px;border-radius:4px" title="刪除">✕</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function addPriceRow() {
+  db.collection('price_records').add({
+    sku: '', name: '新產品', cost: '', purchasePrice: '', retailPrice: '', salePrice: '',
+    createdAt: new Date()
+  }).then(() => showToast('✅ 已新增，點擊欄位直接編輯'));
+}
+
+function updatePriceField(id, field, value) {
+  db.collection('price_records').doc(id).update({ [field]: value });
+}
+
+function deletePriceRow(id) {
+  if (!confirm('確定刪除這筆產品資料？')) return;
+  db.collection('price_records').doc(id).delete();
+  showToast('已刪除');
+}
+
 // ===================== SEEDING =====================
 let seedTab = 'records';
 let seedRecords = [];
@@ -2458,72 +2567,13 @@ function toggleSeedPublish(id, platform) {
   showToast('✅ 狀態已更新');
 }
 
-// ===================== WMS 庫存看板 =====================
-const WMS_DIRECT_URL = 'https://gwmsth.best-inc.com/service/skuStatusStock/page/new';
-let wmsRawData = null;
+// ===================== 庫存看板 =====================
+const STOCK_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyvRSdiUoAchHWqlOzuBbO53Us2WsANJfbRIkg3LjiCevT0L_zbBGvOZhqEgJcbUkon/exec';
+let wmsRawData = null;  // { products, websiteSales }
+let wmsTTSales = null;  // TikTok 出貨（從上傳的 xlsx 解析）
 let wmsFilter = 'all';
 
-function getWmsToken() {
-  return localStorage.getItem('wms_token') || '';
-}
-function saveWmsToken() {
-  const v = document.getElementById('wms-token-input');
-  if (v) localStorage.setItem('wms_token', v.value.trim());
-}
-async function testWmsToken() {
-  saveWmsToken();
-  const token = getWmsToken();
-  if (!token) {
-    document.getElementById('wms-token-dot').className = 'config-dot err';
-    document.getElementById('wms-token-status').textContent = '請先填入 Token';
-    return;
-  }
-  document.getElementById('wms-token-dot').className = 'config-dot';
-  document.getElementById('wms-token-status').textContent = '測試中…';
-  try {
-    const res = await fetch(WMS_DIRECT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json;charset=utf-8', 'Authorization': token },
-      body: JSON.stringify({ pageSize: 1, pageNo: 1, skuCodeList: [], skuStatusIdList: [], ownerId: 14282, whId: 1084, domainId: 10573, orderBy: '', skuCategoryIdList: [], skuEaBarCodeList: [], desc1List: [], skuBrand: '', zeroFlag: false, querySkuType: 'Precise' })
-    });
-    const json = await res.json();
-    if (json && json.data && json.data.total > 0) {
-      document.getElementById('wms-token-dot').className = 'config-dot ok';
-      document.getElementById('wms-token-status').textContent = '✅ 連線成功，共 ' + json.data.total + ' 筆 SKU';
-      showToast('✅ WMS Token 有效！');
-      wmsRawData = null;
-    } else if (res.status === 401) {
-      document.getElementById('wms-token-dot').className = 'config-dot err';
-      document.getElementById('wms-token-status').textContent = 'Token 無效，請重新抓取';
-    } else {
-      document.getElementById('wms-token-dot').className = 'config-dot ok';
-      document.getElementById('wms-token-status').textContent = '✅ 連線成功';
-      wmsRawData = null;
-    }
-  } catch(e) {
-    document.getElementById('wms-token-dot').className = 'config-dot err';
-    document.getElementById('wms-token-status').textContent = '連線失敗：' + e.message;
-  }
-}
-
-function getWmsThreshold() {
-  return parseInt(localStorage.getItem('wms_threshold') || '20');
-}
-function saveWmsThreshold() {
-  const v = document.getElementById('wms-threshold');
-  if (v) localStorage.setItem('wms_threshold', v.value);
-}
-
 function loadWms() {
-  const threshEl = document.getElementById('wms-threshold');
-  if (threshEl) threshEl.value = getWmsThreshold();
-  const token = getWmsToken();
-  if (!token) {
-    document.getElementById('wms-loading').style.display = 'none';
-    document.getElementById('wms-error').style.display = 'block';
-    document.getElementById('wms-error-msg').innerHTML = 'WMS Token 尚未設定<br><button class="btn btn-primary" style="margin-top:12px" onclick="showPage(\'config\')">前往設定</button>';
-    return;
-  }
   if (wmsRawData) { renderWms(); return; }
   document.getElementById('wms-loading').style.display = 'block';
   document.getElementById('wms-content').style.display = 'none';
@@ -2539,41 +2589,31 @@ function refreshWms() {
   fetchWmsData();
 }
 
-async function fetchWmsData() {
-  const token = getWmsToken();
-  try {
-    let allItems = [];
-    let pageNo = 1;
-    const pageSize = 100;
-    let hasMore = true;
-    while (hasMore) {
-      const res = await fetch(WMS_DIRECT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json;charset=utf-8', 'Authorization': token },
-        body: JSON.stringify({ pageSize, pageNo, skuCodeList: [], skuStatusIdList: [], ownerId: 14282, whId: 1084, domainId: 10573, orderBy: '', skuCategoryIdList: [], skuEaBarCodeList: [], desc1List: [], skuBrand: '', zeroFlag: false, querySkuType: 'Precise' })
-      });
-      if (res.status === 401) { showWmsError('Token 已過期，請到「連接設定」更新 WMS Token'); return; }
-      const json = await res.json();
-      if (!json || !json.data || !json.data.records) break;
-      allItems = allItems.concat(json.data.records);
-      const total = json.data.total || 0;
-      if (allItems.length >= total || json.data.records.length < pageSize) hasMore = false;
-      else pageNo++;
-    }
-    wmsRawData = allItems;
-    const el = document.getElementById('wms-fetch-time');
-    if (el) el.textContent = '資料時間：' + new Date().toLocaleString('zh-TW') + '（共 ' + allItems.length + ' 筆）';
+function fetchWmsData() {
+  const cb = 'stockcb_' + Date.now();
+  const script = document.createElement('script');
+  const timer = setTimeout(() => {
+    delete window[cb]; script.remove();
+    showWmsError('連線逾時，請確認 Apps Script 是否正常');
+  }, 20000);
+  window[cb] = function(json) {
+    clearTimeout(timer); delete window[cb]; script.remove();
+    if (!json.success) { showWmsError('載入失敗：' + json.error); return; }
+    wmsRawData = json;
     document.getElementById('wms-loading').style.display = 'none';
+    const saved = localStorage.getItem('wms_tt_sales');
+    if (saved) wmsTTSales = JSON.parse(saved);
     renderWms();
-  } catch(e) {
-    showWmsError('載入失敗：' + e.message);
-  }
+  };
+  script.onerror = () => { clearTimeout(timer); delete window[cb]; script.remove(); showWmsError('無法連線到 Apps Script'); };
+  script.src = STOCK_SCRIPT_URL + '?action=getStock&callback=' + cb;
+  document.body.appendChild(script);
 }
 
 function showWmsError(msg) {
   document.getElementById('wms-loading').style.display = 'none';
   document.getElementById('wms-error').style.display = 'block';
-  document.getElementById('wms-error-msg').textContent = msg;
+  document.getElementById('wms-error-msg').innerHTML = msg + '<br><button class="btn btn-outline" style="margin-top:12px" onclick="refreshWms()">重試</button>';
 }
 
 function setWmsFilter(f, btn) {
@@ -2583,112 +2623,159 @@ function setWmsFilter(f, btn) {
   renderWms();
 }
 
-function renderWms() {
-  if (!wmsRawData) return;
-  const threshold = getWmsThreshold();
-  const search = (document.getElementById('wms-search')||{value:''}).value.toLowerCase();
-  const statusFilter = (document.getElementById('wms-status-filter')||{value:'all'}).value;
+// TikTok 報表上傳
+function handleWmsTTFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      // 找 header row（有 Product 欄位）
+      let hIdx = rows.findIndex(r => r.some(c => (c||'').toString().toLowerCase().includes('product')));
+      if (hIdx === -1) hIdx = 0;
+      const headers = rows[hIdx].map(h => (h||'').toString().toLowerCase());
+      const productCol = headers.findIndex(h => h === 'product');
+      const soldCol = headers.findIndex(h => h.includes('items sold'));
+      if (productCol === -1 || soldCol === -1) { showToast('❌ 找不到 Product 或 Items sold 欄位'); return; }
+      const sales = {};
+      for (let i = hIdx + 1; i < rows.length; i++) {
+        const row = rows[i];
+        const product = (row[productCol]||'').toString().trim();
+        const qty = parseInt(row[soldCol]) || 0;
+        if (product && qty > 0) sales[product] = (sales[product] || 0) + qty;
+      }
+      wmsTTSales = sales;
+      localStorage.setItem('wms_tt_sales', JSON.stringify(sales));
+      const total = Object.values(sales).reduce((a, b) => a + b, 0);
+      document.getElementById('wms-tt-label').textContent = `✅ 已載入：${Object.keys(sales).length} 個 SKU，共 ${total} 件出貨 — ${file.name}`;
+      renderWms();
+      showToast('✅ TikTok 報表已載入');
+    } catch(err) { showToast('❌ 解析失敗：' + err.message); }
+  };
+  reader.readAsArrayBuffer(file);
+}
 
-  // 分類每筆資料
-  const tagged = wmsRawData.map(item => {
-    const qty = parseInt(item.qty) || 0;
-    const saleableQty = parseInt(item.saleableQty) || 0;
-    const occupiedQty = parseInt(item.occupiedQty) || 0;
-    const isZero = saleableQty === 0;
-    const isLow = !isZero && saleableQty <= threshold;
-    return { ...item, qty, saleableQty, occupiedQty, isZero, isLow };
+function clearWmsTT() {
+  wmsTTSales = null;
+  localStorage.removeItem('wms_tt_sales');
+  document.getElementById('wms-tt-label').textContent = '拖放或點擊上傳 .xlsx — 自動扣除 TikTok 出貨量';
+  if (wmsRawData) renderWms();
+  showToast('已清除 TikTok 資料');
+}
+
+function renderWms() {
+  if (!wmsRawData || !wmsRawData.products) return;
+  const products = wmsRawData.products;
+  const websiteSales = wmsRawData.websiteSales || {};
+  const ttSales = wmsTTSales || {};
+  const search = (document.getElementById('wms-search')||{value:''}).value.toLowerCase();
+
+  // 計算每個 SKU 的出貨和剩餘
+  const tagged = products.map(p => {
+    const webQty = websiteSales[p.sku] || 0;
+    // TikTok 用產品名稱模糊對應
+    let ttQty = 0;
+    Object.entries(ttSales).forEach(([name, qty]) => {
+      // 產品名稱包含 SKU 或 SKU 包含產品名稱關鍵字
+      const nameLower = name.toLowerCase();
+      const skuLower = p.sku.toLowerCase();
+      const prodLower = p.name.toLowerCase();
+      if (nameLower.includes(skuLower) || skuLower.includes(nameLower.split(':')[0].trim()) ||
+          nameLower.includes(prodLower.substring(0, 10).toLowerCase())) {
+        ttQty += qty;
+      }
+    });
+    const totalSold = webQty + ttQty;
+    const remaining = Math.max(0, p.initialQty - totalSold);
+    const isZero = remaining === 0;
+    const isLow = !isZero && remaining <= (p.alertQty || 50);
+    return { ...p, webQty, ttQty, totalSold, remaining, isZero, isLow };
   });
 
-  // Stats（全部資料，不受篩選影響）
+  // Stats
   const totalSkus = tagged.length;
-  const goodItems = tagged.filter(i => i.skuStatusCode === 'GOOD');
-  const totalQty = goodItems.reduce((s, i) => s + i.qty, 0);
-  const lowCount = goodItems.filter(i => i.isLow).length;
-  const zeroCount = goodItems.filter(i => i.isZero).length;
+  const totalRemaining = tagged.reduce((s, p) => s + p.remaining, 0);
+  const lowCount = tagged.filter(p => p.isLow).length;
+  const zeroCount = tagged.filter(p => p.isZero).length;
 
   document.getElementById('wms-stats').innerHTML = `
     <div class="stat-card total"><div class="stat-num">${totalSkus}</div><div class="stat-label">SKU 總數</div></div>
-    <div class="stat-card arrived"><div class="stat-num" style="color:#059669">${totalQty.toLocaleString()}</div><div class="stat-label">良品總庫存</div></div>
-    <div class="stat-card ordered"><div class="stat-num" style="color:#D97706">${lowCount}</div><div class="stat-label">低庫存（≤${threshold}）</div></div>
-    <div class="stat-card pending"><div class="stat-num" style="color:#DC2626">${zeroCount}</div><div class="stat-label">可售庫存為零</div></div>
+    <div class="stat-card arrived"><div class="stat-num" style="color:#059669">${totalRemaining.toLocaleString()}</div><div class="stat-label">剩餘總庫存</div></div>
+    <div class="stat-card ordered"><div class="stat-num" style="color:#D97706">${lowCount}</div><div class="stat-label">低庫存</div></div>
+    <div class="stat-card pending"><div class="stat-num" style="color:#DC2626">${zeroCount}</div><div class="stat-label">缺貨</div></div>
   `;
 
-  // 低庫存警示 box
-  const alertItems = goodItems.filter(i => i.isLow || i.isZero);
+  // 警示 banner
+  const alertItems = tagged.filter(p => p.isLow || p.isZero);
   const alertBox = document.getElementById('wms-alert-box');
   if (alertItems.length > 0) {
     alertBox.style.display = 'block';
-    alertBox.innerHTML = '⚠️ <strong>低庫存警示（' + alertItems.length + ' 個 SKU）：</strong> ' +
-      alertItems.map(i => `<span style="display:inline-block;margin:2px 4px;padding:1px 8px;background:rgba(0,0,0,0.08);border-radius:10px">${i.skuCode}</span>`).join('');
+    alertBox.innerHTML = '⚠️ <strong>需要補貨（' + alertItems.length + ' 個 SKU）：</strong> ' +
+      alertItems.map(p => `<span style="display:inline-block;margin:2px 4px;padding:1px 8px;background:rgba(0,0,0,0.08);border-radius:10px">${p.name}</span>`).join('');
   } else {
     alertBox.style.display = 'none';
   }
 
   // 篩選
-  let filtered = tagged.filter(item => {
-    const matchSearch = !search ||
-      (item.skuCode||'').toLowerCase().includes(search) ||
-      (item.skuDesc||'').toLowerCase().includes(search);
-    const matchStatus = statusFilter === 'all' || item.skuStatusCode === statusFilter;
-    const matchFilter = wmsFilter === 'all' ||
-      (wmsFilter === 'low' && item.isLow) ||
-      (wmsFilter === 'zero' && item.isZero);
-    return matchSearch && matchStatus && matchFilter;
+  let filtered = tagged.filter(p => {
+    const matchSearch = !search || p.sku.toLowerCase().includes(search) || p.name.toLowerCase().includes(search);
+    const matchFilter = wmsFilter === 'all' || (wmsFilter === 'low' && p.isLow) || (wmsFilter === 'zero' && p.isZero);
+    return matchSearch && matchFilter;
   });
 
   // 排序：缺貨 → 低庫存 → 正常
   filtered.sort((a, b) => {
-    const pri = i => i.isZero ? 0 : i.isLow ? 1 : 2;
-    return pri(a) - pri(b) || a.skuCode.localeCompare(b.skuCode);
+    const pri = p => p.isZero ? 0 : p.isLow ? 1 : 2;
+    return pri(a) - pri(b) || a.name.localeCompare(b.name);
   });
 
-  const maxQty = Math.max(...filtered.map(i => i.qty), 1);
+  const maxRemaining = Math.max(...filtered.map(p => p.remaining), 1);
 
   let html = `<thead><tr style="background:var(--bg-page)">
     <th style="padding:10px 12px;text-align:left;font-size:11px;color:var(--text-secondary);white-space:nowrap">SKU</th>
     <th style="padding:10px 12px;text-align:left;font-size:11px;color:var(--text-secondary)">產品名稱</th>
-    <th style="padding:10px 12px;text-align:center;font-size:11px;color:var(--text-secondary)">狀態</th>
-    <th style="padding:10px 12px;text-align:right;font-size:11px;color:var(--text-secondary)">總庫存</th>
-    <th style="padding:10px 12px;text-align:right;font-size:11px;color:var(--text-secondary)">可售庫存</th>
-    <th style="padding:10px 12px;text-align:right;font-size:11px;color:var(--text-secondary)">待出貨</th>
-    <th style="padding:10px 12px;text-align:left;font-size:11px;color:var(--text-secondary)">庫存狀況</th>
+    <th style="padding:10px 12px;text-align:right;font-size:11px;color:var(--text-secondary)">期初庫存</th>
+    <th style="padding:10px 12px;text-align:right;font-size:11px;color:var(--text-secondary)">官網出貨</th>
+    <th style="padding:10px 12px;text-align:right;font-size:11px;color:var(--text-secondary)">TikTok 出貨</th>
+    <th style="padding:10px 12px;text-align:right;font-size:11px;color:var(--text-secondary)">剩餘庫存</th>
+    <th style="padding:10px 12px;text-align:left;font-size:11px;color:var(--text-secondary)">狀態</th>
   </tr></thead><tbody>`;
 
-  filtered.forEach((item, i) => {
-    const barColor = item.isZero ? '#DC2626' : item.isLow ? '#D97706' : '#059669';
-    const barW = Math.round((item.saleableQty / Math.max(...filtered.map(x => x.saleableQty), 1)) * 100);
-    const statusBadge = item.skuStatusCode === 'GOOD'
-      ? '<span style="padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;background:#D1FAE5;color:#065F46">GOOD</span>'
-      : '<span style="padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;background:#FEE2E2;color:#991B1B">DAMAGE</span>';
-    const invBadge = item.isZero
+  filtered.forEach((p, i) => {
+    const barColor = p.isZero ? '#DC2626' : p.isLow ? '#D97706' : '#059669';
+    const barW = Math.round((p.remaining / maxRemaining) * 100);
+    const badge = p.isZero
       ? '<span style="padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;background:#FEE2E2;color:#991B1B">⛔ 缺貨</span>'
-      : item.isLow
+      : p.isLow
         ? '<span style="padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;background:#FEF3C7;color:#92400E">⚠ 低庫存</span>'
         : '<span style="padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;background:#D1FAE5;color:#065F46">✓ 充足</span>';
     const bg = i % 2 === 0 ? '' : 'background:var(--bg-page)';
-    const rowHighlight = item.isZero ? 'border-left:3px solid #FCA5A5' : item.isLow ? 'border-left:3px solid #FCD34D' : '';
+    const rowHL = p.isZero ? 'border-left:3px solid #FCA5A5' : p.isLow ? 'border-left:3px solid #FCD34D' : '';
 
-    html += `<tr style="${bg};${rowHighlight}">
-      <td style="padding:10px 12px;font-family:monospace;font-size:11px;color:var(--text-secondary)">${item.skuCode||'—'}</td>
-      <td style="padding:10px 12px;font-weight:500;font-size:13px;max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${item.skuDesc||''}">${item.skuDesc||'—'}</td>
-      <td style="padding:10px 12px;text-align:center">${statusBadge}</td>
-      <td style="padding:10px 12px;text-align:right;font-weight:600">${item.qty.toLocaleString()}</td>
+    html += `<tr style="${bg};${rowHL}">
+      <td style="padding:10px 12px;font-family:monospace;font-size:11px;color:var(--text-secondary)">${p.sku}</td>
+      <td style="padding:10px 12px;font-weight:500;font-size:13px;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${p.name}">${p.name}</td>
+      <td style="padding:10px 12px;text-align:right;color:var(--text-secondary)">${p.initialQty.toLocaleString()}</td>
+      <td style="padding:10px 12px;text-align:right;color:${p.webQty>0?'#6B3FA0':'var(--text-secondary)'}">−${p.webQty}</td>
+      <td style="padding:10px 12px;text-align:right;color:${p.ttQty>0?'#0F6E56':'var(--text-secondary)'}">−${p.ttQty}</td>
       <td style="padding:10px 12px">
         <div style="display:flex;align-items:center;gap:8px;justify-content:flex-end">
-          <span style="min-width:35px;text-align:right;font-size:12px;font-weight:${item.isLow||item.isZero?'700':'400'};color:${barColor}">${item.saleableQty.toLocaleString()}</span>
+          <span style="min-width:35px;text-align:right;font-size:13px;font-weight:${p.isLow||p.isZero?'700':'500'};color:${barColor}">${p.remaining.toLocaleString()}</span>
           <div style="width:60px;background:var(--border);border-radius:4px;height:4px">
             <div style="width:${barW}%;background:${barColor};border-radius:4px;height:4px"></div>
           </div>
         </div>
       </td>
-      <td style="padding:10px 12px;text-align:right;color:var(--text-secondary)">${item.occupiedQty.toLocaleString()}</td>
-      <td style="padding:10px 12px">${invBadge}</td>
+      <td style="padding:10px 12px">${badge}</td>
     </tr>`;
   });
 
   html += '</tbody>';
   document.getElementById('wms-table').innerHTML = html;
   document.getElementById('wms-content').style.display = 'block';
+  document.getElementById('wms-fetch-time').textContent = '更新時間：' + new Date().toLocaleString('zh-TW') + ' · 官網訂單 ' + Object.keys(websiteSales).length + ' 筆 SKU' + (wmsTTSales ? ' · TikTok 已載入' : ' · TikTok 未載入');
 }
 
 function autoLoadInventory() {
