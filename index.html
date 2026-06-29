@@ -576,6 +576,27 @@ const db = firebase.firestore();
       </div>
 
       <div class="config-card">
+        <h3>🔑 WMS 庫存看板 Token</h3>
+        <p>WMS 的登入 Token 會定期過期，過期後到這裡貼新的就好，不需要動任何程式碼。</p>
+        <div style="background:#FEF3C7;border-left:3px solid #F59E0B;padding:10px 14px;border-radius:6px;font-size:13px;margin-bottom:14px;line-height:1.8">
+          <strong>如何取得新 Token：</strong><br>
+          1. 打開 <a href="https://gwmsth.best-inc.com" target="_blank" rel="noopener">gwmsth.best-inc.com</a> 並登入<br>
+          2. 按 <strong>F12</strong> 開 DevTools，點 <strong>Network</strong> tab<br>
+          3. 在 WMS 點任何一個頁面（例如庫存查詢）<br>
+          4. 找到任一筆 API 請求，點進去 → <strong>Headers</strong> → 複製 <code style="font-family:monospace;background:rgba(0,0,0,0.06);padding:1px 5px;border-radius:3px">Authorization</code> 的值<br>
+          5. 貼到下方，點「儲存並測試」
+        </div>
+        <div class="config-input-wrap">
+          <input class="config-input" type="text" id="wms-token-input" placeholder="貼上 Authorization token…" oninput="saveWmsToken()">
+          <button class="btn btn-primary" onclick="testWmsToken()">儲存並測試</button>
+        </div>
+        <div class="config-status">
+          <div class="config-dot" id="wms-token-dot"></div>
+          <span id="wms-token-status">未設定</span>
+        </div>
+      </div>
+
+      <div class="config-card">
         <h3>🆕 建立一個全新、獨立的讀取用 Apps Script</h3>
         <p>這個全新的 Apps Script 跟你原本處理 Email 審批流程的腳本完全分開、互不影響，它唯一的功能就是讀取 Google Sheet 資料給這個網站用。</p>
         <div style="background:#FEF3C7;border-left:3px solid #F59E0B;padding:10px 14px;border-radius:6px;font-size:13px;margin-bottom:14px">
@@ -840,6 +861,14 @@ function loadConfig() {
   if (saved) state.config = JSON.parse(saved);
   const el = document.getElementById('sheets-url');
   if (el) el.value = state.config.sheetsUrl || '';
+  const wt = document.getElementById('wms-token-input');
+  if (wt) {
+    wt.value = getWmsToken();
+    if (getWmsToken()) {
+      document.getElementById('wms-token-dot').className = 'config-dot ok';
+      document.getElementById('wms-token-status').textContent = 'Token 已設定';
+    }
+  }
 }
 
 function saveConfig() {
@@ -2434,6 +2463,55 @@ const WMS_PROXY_URL = 'https://script.google.com/macros/s/AKfycbz9YjYbIvBLgmWigq
 let wmsRawData = null;
 let wmsFilter = 'all';
 
+function getWmsToken() {
+  return localStorage.getItem('wms_token') || '';
+}
+function saveWmsToken() {
+  const v = document.getElementById('wms-token-input');
+  if (v) localStorage.setItem('wms_token', v.value.trim());
+}
+function testWmsToken() {
+  saveWmsToken();
+  const token = getWmsToken();
+  if (!token) {
+    document.getElementById('wms-token-dot').className = 'config-dot err';
+    document.getElementById('wms-token-status').textContent = '請先填入 Token';
+    return;
+  }
+  document.getElementById('wms-token-dot').className = 'config-dot';
+  document.getElementById('wms-token-status').textContent = '測試中…';
+  wmsRawData = null;
+  const cb = 'wmstest_' + Date.now();
+  const script = document.createElement('script');
+  const timer = setTimeout(() => {
+    delete window[cb]; script.remove();
+    document.getElementById('wms-token-dot').className = 'config-dot err';
+    document.getElementById('wms-token-status').textContent = '連線逾時，請確認 Token 是否正確';
+  }, 20000);
+  window[cb] = function(json) {
+    clearTimeout(timer);
+    delete window[cb]; script.remove();
+    if (json.success && json.total > 0) {
+      document.getElementById('wms-token-dot').className = 'config-dot ok';
+      document.getElementById('wms-token-status').textContent = '✅ 連線成功，共 ' + json.total + ' 筆 SKU';
+      showToast('✅ WMS Token 有效！');
+    } else if (json.success && json.total === 0) {
+      document.getElementById('wms-token-dot').className = 'config-dot err';
+      document.getElementById('wms-token-status').textContent = 'Token 可能已過期，回傳 0 筆資料';
+    } else {
+      document.getElementById('wms-token-dot').className = 'config-dot err';
+      document.getElementById('wms-token-status').textContent = '錯誤：' + (json.error || '未知錯誤');
+    }
+  };
+  script.onerror = function() {
+    clearTimeout(timer); delete window[cb]; script.remove();
+    document.getElementById('wms-token-dot').className = 'config-dot err';
+    document.getElementById('wms-token-status').textContent = '無法連線到 Apps Script';
+  };
+  script.src = WMS_PROXY_URL + '?action=getInventory&token=' + encodeURIComponent(token) + '&callback=' + cb;
+  document.body.appendChild(script);
+}
+
 function getWmsThreshold() {
   return parseInt(localStorage.getItem('wms_threshold') || '20');
 }
@@ -2445,6 +2523,13 @@ function saveWmsThreshold() {
 function loadWms() {
   const threshEl = document.getElementById('wms-threshold');
   if (threshEl) threshEl.value = getWmsThreshold();
+  const token = getWmsToken();
+  if (!token) {
+    document.getElementById('wms-loading').style.display = 'none';
+    document.getElementById('wms-error').style.display = 'block';
+    document.getElementById('wms-error-msg').innerHTML = 'WMS Token 尚未設定<br><button class="btn btn-primary" style="margin-top:12px" onclick="showPage(\'config\')">前往設定</button>';
+    return;
+  }
   if (wmsRawData) { renderWms(); return; }
   document.getElementById('wms-loading').style.display = 'block';
   document.getElementById('wms-content').style.display = 'none';
@@ -2461,6 +2546,7 @@ function refreshWms() {
 }
 
 function fetchWmsData() {
+  const token = getWmsToken();
   const cb = 'wmscb_' + Date.now();
   const script = document.createElement('script');
   const timer = setTimeout(() => {
@@ -2472,6 +2558,10 @@ function fetchWmsData() {
     delete window[cb]; script.remove();
     if (!json.success) {
       showWmsError('載入失敗：' + json.error);
+      return;
+    }
+    if (json.total === 0) {
+      showWmsError('Token 已過期，請到「連接設定」更新 WMS Token');
       return;
     }
     wmsRawData = json.data;
@@ -2486,7 +2576,7 @@ function fetchWmsData() {
     delete window[cb]; script.remove();
     showWmsError('無法連線，請確認 Apps Script 部署設定正確');
   };
-  script.src = WMS_PROXY_URL + '?action=getInventory&callback=' + cb;
+  script.src = WMS_PROXY_URL + '?action=getInventory&token=' + encodeURIComponent(token) + '&callback=' + cb;
   document.body.appendChild(script);
 }
 
