@@ -2459,7 +2459,7 @@ function toggleSeedPublish(id, platform) {
 }
 
 // ===================== WMS 庫存看板 =====================
-const WMS_PROXY_URL = 'https://script.google.com/macros/s/AKfycbz9YjYbIvBLgmWigqqd5PAEFEySN5LexjQvoD42-JhoLxgltdMvjiDuG11LtVB3Y9Y1jQ/exec';
+const WMS_DIRECT_URL = 'https://gwmsth.best-inc.com/service/skuStatusStock/page/new';
 let wmsRawData = null;
 let wmsFilter = 'all';
 
@@ -2470,7 +2470,7 @@ function saveWmsToken() {
   const v = document.getElementById('wms-token-input');
   if (v) localStorage.setItem('wms_token', v.value.trim());
 }
-function testWmsToken() {
+async function testWmsToken() {
   saveWmsToken();
   const token = getWmsToken();
   if (!token) {
@@ -2480,36 +2480,30 @@ function testWmsToken() {
   }
   document.getElementById('wms-token-dot').className = 'config-dot';
   document.getElementById('wms-token-status').textContent = '測試中…';
-  wmsRawData = null;
-  const cb = 'wmstest_' + Date.now();
-  const script = document.createElement('script');
-  const timer = setTimeout(() => {
-    delete window[cb]; script.remove();
-    document.getElementById('wms-token-dot').className = 'config-dot err';
-    document.getElementById('wms-token-status').textContent = '連線逾時，請確認 Token 是否正確';
-  }, 20000);
-  window[cb] = function(json) {
-    clearTimeout(timer);
-    delete window[cb]; script.remove();
-    if (json.success && json.total > 0) {
+  try {
+    const res = await fetch(WMS_DIRECT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json;charset=utf-8', 'Authorization': token },
+      body: JSON.stringify({ pageSize: 1, pageNo: 1, skuCodeList: [], skuStatusIdList: [], ownerId: 14282, whId: 1084, domainId: 10573, orderBy: '', skuCategoryIdList: [], skuEaBarCodeList: [], desc1List: [], skuBrand: '', zeroFlag: false, querySkuType: 'Precise' })
+    });
+    const json = await res.json();
+    if (json && json.data && json.data.total > 0) {
       document.getElementById('wms-token-dot').className = 'config-dot ok';
-      document.getElementById('wms-token-status').textContent = '✅ 連線成功，共 ' + json.total + ' 筆 SKU';
+      document.getElementById('wms-token-status').textContent = '✅ 連線成功，共 ' + json.data.total + ' 筆 SKU';
       showToast('✅ WMS Token 有效！');
-    } else if (json.success && json.total === 0) {
+      wmsRawData = null;
+    } else if (res.status === 401) {
       document.getElementById('wms-token-dot').className = 'config-dot err';
-      document.getElementById('wms-token-status').textContent = 'Token 可能已過期，回傳 0 筆資料';
+      document.getElementById('wms-token-status').textContent = 'Token 無效，請重新抓取';
     } else {
-      document.getElementById('wms-token-dot').className = 'config-dot err';
-      document.getElementById('wms-token-status').textContent = '錯誤：' + (json.error || '未知錯誤');
+      document.getElementById('wms-token-dot').className = 'config-dot ok';
+      document.getElementById('wms-token-status').textContent = '✅ 連線成功';
+      wmsRawData = null;
     }
-  };
-  script.onerror = function() {
-    clearTimeout(timer); delete window[cb]; script.remove();
+  } catch(e) {
     document.getElementById('wms-token-dot').className = 'config-dot err';
-    document.getElementById('wms-token-status').textContent = '無法連線到 Apps Script';
-  };
-  script.src = WMS_PROXY_URL + '?action=getInventory&token=' + encodeURIComponent(token) + '&callback=' + cb;
-  document.body.appendChild(script);
+    document.getElementById('wms-token-status').textContent = '連線失敗：' + e.message;
+  }
 }
 
 function getWmsThreshold() {
@@ -2545,39 +2539,35 @@ function refreshWms() {
   fetchWmsData();
 }
 
-function fetchWmsData() {
+async function fetchWmsData() {
   const token = getWmsToken();
-  const cb = 'wmscb_' + Date.now();
-  const script = document.createElement('script');
-  const timer = setTimeout(() => {
-    delete window[cb]; script.remove();
-    showWmsError('連線逾時，請確認 Apps Script 是否正常運作');
-  }, 30000);
-  window[cb] = function(json) {
-    clearTimeout(timer);
-    delete window[cb]; script.remove();
-    if (!json.success) {
-      showWmsError('載入失敗：' + json.error);
-      return;
+  try {
+    let allItems = [];
+    let pageNo = 1;
+    const pageSize = 100;
+    let hasMore = true;
+    while (hasMore) {
+      const res = await fetch(WMS_DIRECT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json;charset=utf-8', 'Authorization': token },
+        body: JSON.stringify({ pageSize, pageNo, skuCodeList: [], skuStatusIdList: [], ownerId: 14282, whId: 1084, domainId: 10573, orderBy: '', skuCategoryIdList: [], skuEaBarCodeList: [], desc1List: [], skuBrand: '', zeroFlag: false, querySkuType: 'Precise' })
+      });
+      if (res.status === 401) { showWmsError('Token 已過期，請到「連接設定」更新 WMS Token'); return; }
+      const json = await res.json();
+      if (!json || !json.data || !json.data.records) break;
+      allItems = allItems.concat(json.data.records);
+      const total = json.data.total || 0;
+      if (allItems.length >= total || json.data.records.length < pageSize) hasMore = false;
+      else pageNo++;
     }
-    if (json.total === 0) {
-      showWmsError('Token 已過期，請到「連接設定」更新 WMS Token');
-      return;
-    }
-    wmsRawData = json.data;
-    const fetchedAt = json.fetchedAt ? new Date(json.fetchedAt).toLocaleString('zh-TW') : '';
+    wmsRawData = allItems;
     const el = document.getElementById('wms-fetch-time');
-    if (el) el.textContent = '資料時間：' + fetchedAt + '（共 ' + json.total + ' 筆）';
+    if (el) el.textContent = '資料時間：' + new Date().toLocaleString('zh-TW') + '（共 ' + allItems.length + ' 筆）';
     document.getElementById('wms-loading').style.display = 'none';
     renderWms();
-  };
-  script.onerror = function() {
-    clearTimeout(timer);
-    delete window[cb]; script.remove();
-    showWmsError('無法連線，請確認 Apps Script 部署設定正確');
-  };
-  script.src = WMS_PROXY_URL + '?action=getInventory&token=' + encodeURIComponent(token) + '&callback=' + cb;
-  document.body.appendChild(script);
+  } catch(e) {
+    showWmsError('載入失敗：' + e.message);
+  }
 }
 
 function showWmsError(msg) {
